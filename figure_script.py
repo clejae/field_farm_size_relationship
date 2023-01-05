@@ -12,8 +12,9 @@ import numpy as np
 
 # project library for plotting
 import plotting_lib
+import os
 
-
+WD = r"Q:\FORLand\Field_farm_size_relationship"
 
 def field_vs_farm_size(df, farm_id_col, area_col, out_pth):
 
@@ -50,31 +51,31 @@ def field_vs_farm_size(df, farm_id_col, area_col, out_pth):
     plotting_lib.scatterplot_two_columns(df=farms2, col1="field_size", col2="farm_area", out_pth=out_pth,
                             x_label=None, y_label=None, title=None, hue="field_num_bins", log=True)
 
-    out_pth2 = r'C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\all_field_vs_farm_size.png'
+    out_pth2 = r'figures\all_field_vs_farm_size.png'
     plotting_lib.scatterplot_two_columns(df=df, col1="area", col2="farm_area", out_pth=out_pth2,
                             x_label=None, y_label=None, title=None, hue=None, log=True)
 
-    out_pth2 = r'C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\all_field_vs_farm_size2.png'
+    out_pth2 = r'figures\all_field_vs_farm_size2.png'
     plotting_lib.scatterplot_two_columns(df=df, col1="area", col2="farm_area", out_pth=out_pth2,
                             x_label=None, y_label=None, title=None, hue="farm_area_class", log=False)
 
     for cl in enumerate(list(df["farm_area_class"].unique())):
         sub = df.loc[df["farm_area_class"].astype(str) == cl].copy()
-        out_pth2 = fr'C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\field_vs_farm_size2_{cl}.png'
+        out_pth2 = fr'figures\field_vs_farm_size2_{cl}.png'
         plotting_lib.scatterplot_two_columns(df=sub, col1="area", col2="farm_area", out_pth=out_pth2,
                                 x_label=None, y_label=None, title=None, hue=None, log=False)
 
 
-    out_pth2 = r'C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\field_vs_farm_size2.png'
+    out_pth2 = r'figures\field_vs_farm_size2.png'
     farms3 = farms2.loc[farms2["mp1"] < 25].copy()
     plotting_lib.scatterplot_two_columns(df=farms3, col1="field_size", col2="farm_area", out_pth=out_pth2,
                             x_label=None, y_label=None, title=None, hue="field_num_bins", log=False)
 
-    out_pth3 = r'C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\bp_field_vs_field_size_bins.png'
+    out_pth3 = r'figures\bp_field_vs_field_size_bins.png'
     plotting_lib.boxplot_by_categories(df=farms3, category_col="field_num_bins", value_col="field_size", out_pth=out_pth3,
                           ylims=None, x_label=None, y_label=None, title=None)
 
-    out_pth3 = r'C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\bp_farms_size_vs_field_size_bins.png'
+    out_pth3 = r'figures\bp_farms_size_vs_field_size_bins.png'
     plotting_lib.boxplot_by_categories(df=farms3, category_col="field_num_bins", value_col="farm_area", out_pth=out_pth3,
                           ylims=None, x_label=None, y_label=None, title=None)
 
@@ -90,10 +91,10 @@ def field_vs_farm_size(df, farm_id_col, area_col, out_pth):
     # farms.sort_values(by="farm_area", inplace=True)
     # bins = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 2000]
     # farms["field_num_bins"] = pd.cut(farms.field_num, bins)
-    # out_pth2 = r'C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\field_vs_farm_size2_random.png'
+    # out_pth2 = r'figures\field_vs_farm_size2_random.png'
     # scatterplot_two_columns(df=farms, col1="field_size", col2="farm_area", out_pth=out_pth2,
     #                         x_label="field_size_random", y_label="farm_size_random", title=None, hue="field_num_bins", log=False)
-    # out_pth2 = r'C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\field_vs_farm_size2_random2.png'
+    # out_pth2 = r'figures\field_vs_farm_size2_random2.png'
     # plotting_lib.scatterplot_two_columns(df=farms, col1="field_size", col2="farm_area", out_pth=out_pth2,
     #                         x_label="field_size_random", y_label="farm_size_random", title=None, hue="field_num_bins", log=True)
 
@@ -103,8 +104,9 @@ def field_vs_farm_size(df, farm_id_col, area_col, out_pth):
 def main():
     stime = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())
     print("start: " + stime)
+    os.chdir(WD)
 
-    pth = r"C:\Users\IAMO\Documents\work_data\chapter1\ALKIS\00_data\vector\IACS\IACS_BB_2020_klassifiziert_25832.shp"
+    pth = r"data\vector\IACS\IACS_BB_2020_klassifiziert_25832.shp"
     df = gpd.read_file(pth)
     df["area"] = df.geometry.area / 10000
     df = df.loc[df["BTNR"].str.slice(0, 2) == '12'].copy()
@@ -115,7 +117,7 @@ def main():
         df=df,
         farm_id_col="BTNR",
         area_col="area",
-        out_pth=r"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\field_vs_farm_size.png")
+        out_pth=r"figures\field_vs_farm_size.png")
 
     # crop_class_dict = {
     #     "1": "Maize",
@@ -140,7 +142,7 @@ def main():
     # bins = [0, 10, 100, 200, 1000, 20000]
     # crop_classes = ["Maize", "Winter wheat", "Sugar beet", "Winter rapeseed", "Potato", "Spring cereals" "Triticale",
     #                 "Winter barley", "Winter rye", "Legumes", "Arable Grass", "Vegetables"]
-    # out_pth=r"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\field_sizes_per_farm_classes_and_crop_type.png"
+    # out_pth=r"figures\field_sizes_per_farm_classes_and_crop_type.png"
     # plotting_lib.plot_farm_vs_field_sizes_from_iacs(df=df, farm_id_col='BTNR', area_col='area', crop_class_col='crop_class',
     #                                    bins=bins, crop_classes=crop_classes, out_pth=out_pth)
     #
@@ -166,7 +168,7 @@ def main():
     # # bins = [0, 1, 2, 5, 10, 20, 30, 50, 75, 100, 200, 20000] ## BMEL Statistik, Größenklassen
     # bins = [0, 10, 100, 200, 1000, 20000]
     # crop_classes = ["Winter leaf crop", "Winter cereal crop", "Spring leaf crop", "Spring cereal crop"]
-    # out_pth = r"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\field_sizes_per_farm_classes_and_broader_crop_type.png"
+    # out_pth = r"figures\field_sizes_per_farm_classes_and_broader_crop_type.png"
     # plotting_lib.plot_farm_vs_field_sizes_from_iacs(df=df, farm_id_col='BTNR', area_col='area', crop_class_col='crop_class2',
     #                                    bins=bins, crop_classes=crop_classes, out_pth=out_pth)
 
@@ -203,10 +205,10 @@ def main():
     #                                    crop_class_col='funct_seq_div',
     #                                    bins=bins, crop_classes=crop_classes, out_pth=out_pth, col_wrap=3, x_lim=(-5, 100))
 
-    df1 = gpd.read_file(r"C:\Users\IAMO\Documents\work_data\cst_paper\data\vector\IACS\BB\IACS_BB_2018.shp")
-    df2 = gpd.read_file(r"C:\Users\IAMO\Documents\work_data\cst_paper\data\vector\IACS\BV\IACS_BV_2018.shp")
-    df3 = gpd.read_file(r"C:\Users\IAMO\Documents\work_data\cst_paper\data\vector\IACS\SA\IACS_SA_2018.shp")
-    df4 = gpd.read_file(r"C:\Users\IAMO\Documents\work_data\cst_paper\data\vector\IACS\LS\IACS_LS_2018.shp")
+    df1 = gpd.read_file(r"data\vector\IACS\IACS_BB_2018.shp")
+    df2 = gpd.read_file(r"data\vector\IACS\IACS_BV_2018.shp")
+    df3 = gpd.read_file(r"data\vector\IACS\IACS_SA_2018.shp")
+    df4 = gpd.read_file(r"data\vector\IACS\IACS_LS_2018.shp")
 
     df1["area"] = df1["geometry"].area
     df2["area"] = df2["geometry"].area
@@ -278,11 +280,11 @@ def main():
     df["farm_area_class"] = pd.cut(df.farm_area, bins)
     df["farm_area_class"] = df["farm_area_class"].astype(str)
 
-    out_pth = r"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\field_vs_farm_size_by_state_xlogscaled.png"
+    out_pth = r"figures\field_vs_farm_size_by_state_xlogscaled.png"
     plotting_lib.scatterplot_two_columns(df=df, col1="area", col2="farm_area", out_pth=out_pth,
                             x_label=None, y_label=None, title=None, hue="state", log=True)
 
-    out_pth = r"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\field_vs_farm_size_by_state.png"
+    out_pth = r"figures\field_vs_farm_size_by_state.png"
     plotting_lib.scatterplot_two_columns(df=df, col1="area", col2="farm_area", out_pth=out_pth,
                             x_label=None, y_label=None, title=None, hue="state", log=False)
 

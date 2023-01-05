@@ -14,7 +14,7 @@ import numpy as np
 # project library for plotting
 import plotting_lib
 ## ------------------------------------------ USER INPUT ------------------------------------------------------#
-WD = r"C:\Users\IAMO\Documents\work_data\chapter1\ALKIS"
+WD = r"Q:\FORLand\Field_farm_size_relationship"
 
 
 ## ------------------------------------------ DEFINE FUNCTIONS ------------------------------------------------#
@@ -40,6 +40,7 @@ def classify_crops(shp_pth, kart_fname, kartk_fname):
     from osgeo import ogr
 
     ## open reference table
+    ## ToDo: Replace path. move file
     df_m = pd.read_excel(r"Daten\vector\InVekos\Tables\UniqueCropCodes_AllYrsAndBundeslaender.xlsx",
                          sheet_name='UniqueCodes')
 
@@ -258,36 +259,36 @@ def main():
     ## Only locally available
     input_dict = {
         "BB": {
-            "iacs_pth": r"C:\Users\IAMO\Documents\work_data\cst_paper\data\vector\IACS\BB\IACS_BB_2018.shp",
+            "iacs_pth": r"data\vector\IACS\IACS_BB_2018.shp",
             "farm_id_col": "BNR_ZD",
             "field_id_col": None,
             "field_size_col": None,
             "farm_size_col": None
         },
         "SA": {
-            "iacs_pth": r"C:\Users\IAMO\Documents\work_data\cst_paper\data\vector\IACS\SA\IACS_SA_2018.shp",
+            "iacs_pth": r"data\vector\IACS\IACS_SA_2018.shp",
             "farm_id_col": "btnr",
             "field_id_col": None,
             "field_size_col": None,
             "farm_size_col": None
         },
         "TH": {
-            ## The crop in Thuringia are not yet classified into crop classes. This should be done for further analysis.
-            "iacs_pth": r"C:\Users\IAMO\Documents\work_data\cst_paper\data\vector\IACS\TH\IACS_TH_2019_red.shp",
+            ## ToDo: The crops in Thuringia are not yet classified into crop classes. This should be done for further analysis.
+            "iacs_pth": r"data\vector\IACS\IACS_TH_2019_red.shp",
             "farm_id_col": "BDF_PI",
             "field_id_col": None,
             "field_size_col": None,
             "farm_size_col": None
         },
         "LS": {
-            "iacs_pth": r"C:\Users\IAMO\Documents\work_data\cst_paper\data\vector\IACS\LS\IACS_LS_2018.shp",
+            "iacs_pth": r"data\vector\IACS\IACS_LS_2018.shp",
             "farm_id_col": "REGISTRIER",
             "field_id_col": None,
             "field_size_col": None,
             "farm_size_col": None
         },
         "BV": {
-            "iacs_pth": r"C:\Users\IAMO\Documents\work_data\cst_paper\data\vector\IACS\BV\IACS_BV_2018.shp",
+            "iacs_pth": r"data\vector\IACS\IACS_BV_2018.shp",
             "farm_id_col": "bnrhash",
             "field_id_col": None,
             "field_size_col": None,
@@ -296,7 +297,7 @@ def main():
     }
 
     key = "ALL"
-    pth = fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\data\vector\IACS_{key}_2018.shp"
+    pth = fr"data\vector\IACS\IACS_{key}_2018.shp"
     # iacs = prepare_large_iacs_shp(
     #     input_dict=input_dict,
     #     out_pth=pth
@@ -304,7 +305,7 @@ def main():
     iacs = gpd.read_file(pth)
 
     for hexasize in [30, 15, 5, 1]:
-        hexagon_pth = fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\data\vector\grid\hexagon_grid_germany_{hexasize}km.shp"
+        hexagon_pth = fr"data\vector\grid\hexagon_grid_germany_{hexasize}km.shp"
         hex_shp = gpd.read_file(hexagon_pth)
         hex_shp.rename(columns={"id": "hexa_id"}, inplace=True)
         model_results_shp = farm_field_regression_in_hexagons(
@@ -318,11 +319,11 @@ def main():
             log_x=True,
             log_y=True
         )
-        pth = fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\data\vector\grid\hexagon_grid_{key}_{hexasize}km_with_values.shp"
+        pth = fr"data\vector\grid\hexagon_grid_{key}_{hexasize}km_with_values.shp"
         model_results_shp.to_file(pth)
 
     for hexasize in [1, 5, 15, 30]:
-        pth = fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\data\vector\grid\hexagon_grid_{key}_{hexasize}km_with_values.shp"
+        pth = fr"data\vector\grid\hexagon_grid_{key}_{hexasize}km_with_values.shp"
         model_results_shp = gpd.read_file(pth)
         model_results_shp.replace([np.inf, -np.inf], np.nan, inplace=True)
         model_results_shp.dropna(subset=["rsquared"], how="all", inplace=True)
@@ -336,22 +337,22 @@ def main():
 
         plotting_lib.plot_maps_in_grid(
             shp=model_results_shp,
-            out_pth=fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\maps\{key}_model_results_logscaled_{hexasize}km.png",
+            out_pth=fr"figures\maps\{key}_model_results_logscaled_{hexasize}km.png",
             cols=["intercept", "slope", "rsquared", "num_farms", "num_fields", "avgfield_s", "avgfarm_s"],
             nrow=2,
             ncol=4,
             figsize=figsize,
             dpi=dpi,
-            shp2_pth=fr"C:\Users\IAMO\Documents\work_data\cst_paper\data\vector\administrative\GER_bundeslaender.shp",
+            shp2_pth=fr"data\vector\administrative\GER_bundeslaender.shp",
             titles=["intercept", "slope", "rsquared", "num farms", "num fields", "mean field size [ha]",
                     "mean farm size [ha]"],
             highlight_extremes=False
         )
 
-    pth1 = fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\data\vector\grid\hexagon_grid_{key}_1km_with_values.shp"
-    pth5 = fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\data\vector\grid\hexagon_grid_{key}_5km_with_values.shp"
-    pth15 = fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\data\vector\grid\hexagon_grid_{key}_15km_with_values.shp"
-    pth30 = fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\data\vector\grid\hexagon_grid_{key}_30km_with_values.shp"
+    pth1 = fr"data\vector\grid\hexagon_grid_{key}_1km_with_values.shp"
+    pth5 = fr"data\vector\grid\hexagon_grid_{key}_5km_with_values.shp"
+    pth15 = fr"data\vector\grid\hexagon_grid_{key}_15km_with_values.shp"
+    pth30 = fr"data\vector\grid\hexagon_grid_{key}_30km_with_values.shp"
     model_results_shp1 = gpd.read_file(pth1)
     model_results_shp5 = gpd.read_file(pth5)
     model_results_shp15 = gpd.read_file(pth15)
@@ -371,12 +372,12 @@ def main():
     # fig, ax = plt.subplots(1, 1, figsize=cm2inch(15, 10))
     # sns.jointplot(data=df,  x="num_farms", y="rsquared", kind="kde")
     # fig.tight_layout()
-    # plt.savefig(fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\num_farms_vs_rsquared.png", dpi=300)
+    # plt.savefig(fr"figures\num_farms_vs_rsquared.png", dpi=300)
     # plt.close()
 
     # plotting_lib.scatterplot_two_columns(
     #     df=df,
-    #     out_pth=fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\num_farms_vs_rsquared.png",
+    #     out_pth=fr"figures\num_farms_vs_rsquared.png",
     #     col1="num_farms",
     #     col2="rsquared",
     #     hue="df"
@@ -384,7 +385,7 @@ def main():
 
     plotting_lib.boxplots_in_grid(
         df=df,
-        out_pth=fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\boxplots_hexasize_rsquared2.png",
+        out_pth=fr"figures\boxplots_hexasize_rsquared2.png",
         value_cols=["intercept", "slope", "rsquared", "num_farms", "num_fields", "avgfield_s", "avgfarm_s"],
         category_col="df",
         nrow=7,
@@ -395,7 +396,7 @@ def main():
 
     plotting_lib.boxplots_in_grid(
         df=df,
-        out_pth=fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\boxplots_num_farms_bins_rsquared2.png",
+        out_pth=fr"figures\boxplots_num_farms_bins_rsquared2.png",
         value_cols=["intercept", "slope", "rsquared", "num_farms", "num_fields", "avgfield_s", "avgfarm_s"],
         category_col="num_farms_bins",
         nrow=7,
@@ -408,9 +409,9 @@ def main():
     # for var in ["slope", "intercept", "num_fields", "rsquared", "mean_field_size", "mean_farm_size"]:
     #     plotting_lib.plot_map(
     #         shp=model_results_shp,
-    #         out_pth=fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\maps\{key}_{var}.png",
+    #         out_pth=fr"figures\maps\{key}_{var}.png",
     #         col=var,
-    #         shp2_pth=fr"C:\Users\IAMO\Documents\work_data\cst_paper\data\vector\administrative\GER_bundeslaender.shp",
+    #         shp2_pth=fr"data\vector\administrative\GER_bundeslaender.shp",
     #         highlight_extremes=False
     #     )
 
@@ -418,11 +419,11 @@ def main():
     # for key in input_dict:
     #     print(f"Current federeal state: {key}")
     #
-    #     hexagon_pth = fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\data\vector\grid\hexagon_grid_germany_15km.shp"
+    #     hexagon_pth = fr"data\vector\grid\hexagon_grid_germany_15km.shp"
     #     hex_shp = gpd.read_file(hexagon_pth)
     #     hex_shp.rename(columns={"id": "hexa_id"}, inplace=True)
     #
-    #     # iacs_pth = r"C:\Users\IAMO\Documents\work_data\cst_paper\data\vector\IACS\BB\IACS_BB_2018.shp"
+    #     # iacs_pth = r"vector\IACS\IACS_BB_2018.shp"
     #     iacs_pth = input_dict[key]["iacs_pth"]
     #     farm_id_col = input_dict[key]["farm_id_col"]
     #     field_size_col = input_dict[key]["field_size_col"]
@@ -440,31 +441,31 @@ def main():
     #         field_size_col=field_size_col,
     #         farm_size_col=farm_size_col
     #     )
-    #     pth = fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\data\vector\grid\hexagon_grid_{key}_15km_with_values.shp"
+    #     pth = fr"data\vector\grid\hexagon_grid_{key}_15km_with_values.shp"
         # model_results_shp.to_file(pth)
     #
     #     model_results_shp = gpd.read_file(pth)
     #     plotting_lib.plot_map(
     #         shp=model_results_shp,
-    #         out_pth=fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\maps\{key}_slope.png",
+    #         out_pth=fr"figures\maps\{key}_slope.png",
     #         col="slope",
-    #         shp2_pth=fr"C:\Users\IAMO\Documents\work_data\cst_paper\data\vector\administrative\{key}_bundesland.shp",
+    #         shp2_pth=fr"data\vector\administrative\{key}_bundesland.shp",
     #         highlight_extremes=False
     #     )
     #
     #     plotting_lib.plot_map(
     #         shp=model_results_shp,
-    #         out_pth=fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\maps\{key}_intercept.png",
+    #         out_pth=fr"figures\maps\{key}_intercept.png",
     #         col="intercept",
-    #         shp2_pth=fr"C:\Users\IAMO\Documents\work_data\cst_paper\data\vector\administrative\{key}_bundesland.shp",
+    #         shp2_pth=fr"data\vector\administrative\{key}_bundesland.shp",
     #         highlight_extremes=False
     #     )
     #
     #     plotting_lib.plot_map(
     #         shp=model_results_shp,
-    #         out_pth=fr"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\figures\maps\{key}_num_fields.png",
+    #         out_pth=fr"figures\maps\{key}_num_fields.png",
     #         col="num_fields",
-    #         shp2_pth=fr"C:\Users\IAMO\Documents\work_data\cst_paper\data\vector\administrative\{key}_bundesland.shp",
+    #         shp2_pth=fr"data\vector\administrative\{key}_bundesland.shp",
     #         highlight_extremes=False
     #     )
 
