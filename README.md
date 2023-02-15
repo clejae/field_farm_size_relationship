@@ -25,12 +25,12 @@ An empirical assessment of the field size ~ farm size relationship (FFSR)
   - [x] calculate regression per hexagon
 
 - 2.)
-  - [ ] Create classification table for TH ("Kulturart" --> crop classes)
-  - [ ] Assing crop classes to "Kulturarten" in TH
-  - [ ] Determine Crop Sequence Types for TH
-  - [ ] Aggregate predictors per field:
-	  - use centroid of field to fetch crop sequence type from raster
-	  - check if TH data come with information on organic agricultur and livestock numbers
-	  - (assign livestock numbers to farms in TH data)
-	  - calculate mean agricultural suitability per field
-	  - calculate mean slope, elevation etc. per field
+  - [x] Create classification table for TH ("Kulturart" --> crop classes)
+  - [x] Assing crop classes to "Kulturarten" in TH
+  - [x] Determine Crop Sequence Types for TH
+  - [x] Aggregate predictors per field
+  - [ ] Add share of UAA per heaxgon to each field 
+  - [ ] Add Ruggedness per hexagon to each field
+  
+- 3.)
+  - [ ] Bayesian modelling of relationship

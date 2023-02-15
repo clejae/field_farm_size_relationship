@@ -139,6 +139,7 @@ def prepare_large_iacs_shp(input_dict, out_pth):
         shp["field_id"] = shp.index
         shp["field_id"] = shp["field_id"].apply(lambda x: f"{key}_{x}")
         if "ID_KTYP" in list(shp.columns):
+            shp["ID_KTYP"] = shp["ID_KTYP"].astype(int)
             shp = shp.loc[shp["ID_KTYP"].isin([1, 2, 3, 4, 5, 6, 7, 9, 10, 12, 13, 14, 60])].copy()
 
         shp["field_size"] = shp["geometry"].area / 10000
@@ -149,7 +150,7 @@ def prepare_large_iacs_shp(input_dict, out_pth):
         shp = pd.merge(shp, farm_sizes, on=farm_id_col, how="left")
 
         shp.rename(columns={farm_id_col: "farm_id"}, inplace=True)
-        shp = shp[["field_id", "farm_id", "field_size", "farm_size", "geometry"]].copy()
+        shp = shp[["field_id", "farm_id", "field_size", "farm_size", "ID_KTYP", "geometry"]].copy()
 
         shp_lst.append(shp)
 
@@ -273,8 +274,7 @@ def main():
             "farm_size_col": None
         },
         "TH": {
-            ## ToDo: The crops in Thuringia are not yet classified into crop classes. This should be done for further analysis.
-            "iacs_pth": r"data\vector\IACS\IACS_TH_2019_red.shp",
+            "iacs_pth": r"data\vector\IACS\IACS_TH_2018.shp",
             "farm_id_col": "BDF_PI",
             "field_id_col": None,
             "field_size_col": None,
@@ -297,77 +297,91 @@ def main():
     }
 
     key = "ALL"
-    pth = fr"data\vector\IACS\IACS_{key}_2018.shp"
-    # iacs = prepare_large_iacs_shp(
-    #     input_dict=input_dict,
-    #     out_pth=pth
-    # )
-    iacs = gpd.read_file(pth)
+    pth = fr"data\vector\IACS\IACS_{key}_2018_new.shp"
+    iacs = prepare_large_iacs_shp(
+        input_dict=input_dict,
+        out_pth=pth
+    )
+    # iacs = gpd.read_file(pth)
+    #
+    # ## Get some basic statistics
+    # iacs["fstate"] = iacs["field_id"].apply(lambda x: x.split('_')[0])
+    # df_stat = iacs.groupby("fstate").agg(
+    #     area=pd.NamedAgg(column="field_size",aggfunc="sum"),
+    #     num_fields=pd.NamedAgg(column="field_id", aggfunc="count"),
+    #     num_farms=pd.NamedAgg(column="farm_id", aggfunc=list)
+    # ).reset_index()
+    # df_stat["num_farms"] = df_stat["num_farms"].apply(lambda x: len(set(x)))
+    # df_stat["mean_field_size"] = df_stat["area"] / df_stat["num_fields"]
+    # df_stat["mean_farm_size"] = df_stat["area"] / df_stat["num_farms"]
+    #
+    # df_stat.to_csv(r"data\tables\general_stats.csv", index=False)
+    # print("Done calculating general statistics.")
 
-    for hexasize in [30, 15, 5, 1]:
-        hexagon_pth = fr"data\vector\grid\hexagon_grid_germany_{hexasize}km.shp"
-        hex_shp = gpd.read_file(hexagon_pth)
-        hex_shp.rename(columns={"id": "hexa_id"}, inplace=True)
-        model_results_shp = farm_field_regression_in_hexagons(
-            hex_shp=hex_shp,
-            iacs=iacs,
-            hexa_id_col="hexa_id",
-            farm_id_col="farm_id",
-            field_id_col="field_id",
-            field_size_col="field_size",
-            farm_size_col="farm_size",
-            log_x=True,
-            log_y=True
-        )
-        pth = fr"data\vector\grid\hexagon_grid_{key}_{hexasize}km_with_values.shp"
-        model_results_shp.to_file(pth)
-
-    for hexasize in [1, 5, 15, 30]:
-        pth = fr"data\vector\grid\hexagon_grid_{key}_{hexasize}km_with_values.shp"
-        model_results_shp = gpd.read_file(pth)
-        model_results_shp.replace([np.inf, -np.inf], np.nan, inplace=True)
-        model_results_shp.dropna(subset=["rsquared"], how="all", inplace=True)
-        model_results_shp = model_results_shp[model_results_shp["num_farms"] > 1].copy()
-        if hexasize == 1:
-            dpi = 600
-            figsize = (40, 24)
-        else:
-            dpi = 300
-            figsize = (20, 12)
-
-        plotting_lib.plot_maps_in_grid(
-            shp=model_results_shp,
-            out_pth=fr"figures\maps\{key}_model_results_logscaled_{hexasize}km.png",
-            cols=["intercept", "slope", "rsquared", "num_farms", "num_fields", "avgfield_s", "avgfarm_s"],
-            nrow=2,
-            ncol=4,
-            figsize=figsize,
-            dpi=dpi,
-            shp2_pth=fr"data\vector\administrative\GER_bundeslaender.shp",
-            titles=["intercept", "slope", "rsquared", "num farms", "num fields", "mean field size [ha]",
-                    "mean farm size [ha]"],
-            highlight_extremes=False
-        )
-
-    pth1 = fr"data\vector\grid\hexagon_grid_{key}_1km_with_values.shp"
-    pth5 = fr"data\vector\grid\hexagon_grid_{key}_5km_with_values.shp"
-    pth15 = fr"data\vector\grid\hexagon_grid_{key}_15km_with_values.shp"
-    pth30 = fr"data\vector\grid\hexagon_grid_{key}_30km_with_values.shp"
-    model_results_shp1 = gpd.read_file(pth1)
-    model_results_shp5 = gpd.read_file(pth5)
-    model_results_shp15 = gpd.read_file(pth15)
-    model_results_shp30 = gpd.read_file(pth30)
-
-    model_results_shp1["df"] = "1"
-    model_results_shp5["df"] = "5"
-    model_results_shp15["df"] = "15"
-    model_results_shp30["df"] = "30"
-
-    df = pd.concat([model_results_shp1, model_results_shp5, model_results_shp15, model_results_shp30], axis=0)
-    df.replace([np.inf, -np.inf], np.nan, inplace=True)
-    df.dropna(subset=["rsquared"], how="all", inplace=True)
-    df = df[df["num_farms"] > 1].copy()
-    df["num_farms_bins"] = pd.cut(df["num_farms"], [0, 10, 25, 100, 250, 1000, 2500])
+    # for hexasize in [30, 15, 5, 1]:
+    #     hexagon_pth = fr"data\vector\grid\hexagon_grid_germany_{hexasize}km.shp"
+    #     hex_shp = gpd.read_file(hexagon_pth)
+    #     hex_shp.rename(columns={"id": "hexa_id"}, inplace=True)
+    #     model_results_shp = farm_field_regression_in_hexagons(
+    #         hex_shp=hex_shp,
+    #         iacs=iacs,
+    #         hexa_id_col="hexa_id",
+    #         farm_id_col="farm_id",
+    #         field_id_col="field_id",
+    #         field_size_col="field_size",
+    #         farm_size_col="farm_size",
+    #         log_x=True,
+    #         log_y=True
+    #     )
+    #     pth = fr"data\vector\grid\hexagon_grid_{key}_{hexasize}km_with_values.shp"
+    #     model_results_shp.to_file(pth)
+    #
+    # for hexasize in [1, 5, 15, 30]:
+    #     pth = fr"data\vector\grid\hexagon_grid_{key}_{hexasize}km_with_values.shp"
+    #     model_results_shp = gpd.read_file(pth)
+    #     model_results_shp.replace([np.inf, -np.inf], np.nan, inplace=True)
+    #     model_results_shp.dropna(subset=["rsquared"], how="all", inplace=True)
+    #     model_results_shp = model_results_shp[model_results_shp["num_farms"] > 1].copy()
+    #     if hexasize == 1:
+    #         dpi = 600
+    #         figsize = (40, 24)
+    #     else:
+    #         dpi = 300
+    #         figsize = (20, 12)
+    #
+    #     plotting_lib.plot_maps_in_grid(
+    #         shp=model_results_shp,
+    #         out_pth=fr"figures\maps\{key}_model_results_logscaled_{hexasize}km.png",
+    #         cols=["intercept", "slope", "rsquared", "num_farms", "num_fields", "avgfield_s", "avgfarm_s"],
+    #         nrow=2,
+    #         ncol=4,
+    #         figsize=figsize,
+    #         dpi=dpi,
+    #         shp2_pth=fr"data\vector\administrative\GER_bundeslaender.shp",
+    #         titles=["intercept", "slope", "rsquared", "num farms", "num fields", "mean field size [ha]",
+    #                 "mean farm size [ha]"],
+    #         highlight_extremes=False
+    #     )
+    #
+    # pth1 = fr"data\vector\grid\hexagon_grid_{key}_1km_with_values.shp"
+    # pth5 = fr"data\vector\grid\hexagon_grid_{key}_5km_with_values.shp"
+    # pth15 = fr"data\vector\grid\hexagon_grid_{key}_15km_with_values.shp"
+    # pth30 = fr"data\vector\grid\hexagon_grid_{key}_30km_with_values.shp"
+    # model_results_shp1 = gpd.read_file(pth1)
+    # model_results_shp5 = gpd.read_file(pth5)
+    # model_results_shp15 = gpd.read_file(pth15)
+    # model_results_shp30 = gpd.read_file(pth30)
+    #
+    # model_results_shp1["df"] = "1"
+    # model_results_shp5["df"] = "5"
+    # model_results_shp15["df"] = "15"
+    # model_results_shp30["df"] = "30"
+    #
+    # df = pd.concat([model_results_shp1, model_results_shp5, model_results_shp15, model_results_shp30], axis=0)
+    # df.replace([np.inf, -np.inf], np.nan, inplace=True)
+    # df.dropna(subset=["rsquared"], how="all", inplace=True)
+    # df = df[df["num_farms"] > 1].copy()
+    # df["num_farms_bins"] = pd.cut(df["num_farms"], [0, 10, 25, 100, 250, 1000, 2500])
 
     # fig, ax = plt.subplots(1, 1, figsize=cm2inch(15, 10))
     # sns.jointplot(data=df,  x="num_farms", y="rsquared", kind="kde")
@@ -383,27 +397,27 @@ def main():
     #     hue="df"
     # )
 
-    plotting_lib.boxplots_in_grid(
-        df=df,
-        out_pth=fr"figures\boxplots_hexasize_rsquared2.png",
-        value_cols=["intercept", "slope", "rsquared", "num_farms", "num_fields", "avgfield_s", "avgfarm_s"],
-        category_col="df",
-        nrow=7,
-        ncol=1,
-        figsize=(7, 21),
-        x_labels=("hexagon_size [km]", "hexagon_size [km]", "hexagon_size [km]", "hexagon_size [km]", "hexagon_size [km]", "hexagon_size [km]", "hexagon_size [km]"),
-        dpi=300)
-
-    plotting_lib.boxplots_in_grid(
-        df=df,
-        out_pth=fr"figures\boxplots_num_farms_bins_rsquared2.png",
-        value_cols=["intercept", "slope", "rsquared", "num_farms", "num_fields", "avgfield_s", "avgfarm_s"],
-        category_col="num_farms_bins",
-        nrow=7,
-        ncol=1,
-        figsize=(7, 21),
-        x_labels=("Number farms bin", "Number farms bin", "Number farms bin", "Number farms bin", "Number farms bin", "Number farms bin", "Number farms bin"),
-        dpi=300)
+    # plotting_lib.boxplots_in_grid(
+    #     df=df,
+    #     out_pth=fr"figures\boxplots_hexasize_rsquared2.png",
+    #     value_cols=["intercept", "slope", "rsquared", "num_farms", "num_fields", "avgfield_s", "avgfarm_s"],
+    #     category_col="df",
+    #     nrow=7,
+    #     ncol=1,
+    #     figsize=(7, 21),
+    #     x_labels=("hexagon_size [km]", "hexagon_size [km]", "hexagon_size [km]", "hexagon_size [km]", "hexagon_size [km]", "hexagon_size [km]", "hexagon_size [km]"),
+    #     dpi=300)
+    #
+    # plotting_lib.boxplots_in_grid(
+    #     df=df,
+    #     out_pth=fr"figures\boxplots_num_farms_bins_rsquared2.png",
+    #     value_cols=["intercept", "slope", "rsquared", "num_farms", "num_fields", "avgfield_s", "avgfarm_s"],
+    #     category_col="num_farms_bins",
+    #     nrow=7,
+    #     ncol=1,
+    #     figsize=(7, 21),
+    #     x_labels=("Number farms bin", "Number farms bin", "Number farms bin", "Number farms bin", "Number farms bin", "Number farms bin", "Number farms bin"),
+    #     dpi=300)
 
 
     # for var in ["slope", "intercept", "num_fields", "rsquared", "mean_field_size", "mean_farm_size"]:
