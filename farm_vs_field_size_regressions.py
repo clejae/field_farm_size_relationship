@@ -10,6 +10,9 @@ import geopandas as gpd
 import pandas as pd
 import statsmodels.api as sm
 import numpy as np
+import warnings
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 # project library for plotting
 import plotting_lib
@@ -141,24 +144,102 @@ def prepare_large_iacs_shp(input_dict, out_pth):
         if "ID_KTYP" in list(shp.columns):
             shp["ID_KTYP"] = shp["ID_KTYP"].astype(int)
             shp = shp.loc[shp["ID_KTYP"].isin([1, 2, 3, 4, 5, 6, 7, 9, 10, 12, 13, 14, 60])].copy()
+        shp = shp.loc[shp["geometry"] != None].copy()
 
         shp["field_size"] = shp["geometry"].area / 10000
 
-        farm_sizes = shp.groupby(farm_id_col).agg(
-            farm_size=pd.NamedAgg(column="field_size", aggfunc="sum")
-        ).reset_index()
-        shp = pd.merge(shp, farm_sizes, on=farm_id_col, how="left")
-
         shp.rename(columns={farm_id_col: "farm_id"}, inplace=True)
-        shp = shp[["field_id", "farm_id", "field_size", "farm_size", "ID_KTYP", "geometry"]].copy()
+        shp = shp[["field_id", "farm_id", "field_size", "ID_KTYP", "geometry"]].copy()
 
         shp_lst.append(shp)
 
     print("\tConcatenating all shapefiles and writing out.")
     out_shp = pd.concat(shp_lst, axis=0)
-    out_shp.to_file(out_pth)
+    del shp_lst
 
+    ## Calculate farm sizes
+    farm_sizes = out_shp.groupby("farm_id").agg(
+        farm_size=pd.NamedAgg(column="field_size", aggfunc="sum")
+    ).reset_index()
+    out_shp = pd.merge(out_shp, farm_sizes, on="farm_id", how="left")
+    out_shp = out_shp[["field_id", "farm_id", "field_size", "farm_size", "ID_KTYP", "geometry"]].copy()
+    # t = out_shp.loc[out_shp["geometry"] != None].copy()
+
+    out_shp.to_file(out_pth)
+    print("done!")
     return out_shp
+
+
+def explore_field_sizes(iacs, farm_id_col, field_id_col, field_size_col, farm_size_col):
+
+    farms = iacs.groupby(farm_id_col).agg(
+        farm_size=pd.NamedAgg(farm_size_col, "first"),
+        n_farm_sizes=pd.NamedAgg(farm_size_col, "nunique"), # to control for consistency
+        mean_field_size=pd.NamedAgg(field_size_col, "mean"),
+        max_field_size=pd.NamedAgg(field_size_col, "max"),
+        min_field_size=pd.NamedAgg(field_size_col, "min"),
+        num_fields=pd.NamedAgg(field_id_col, "nunique")
+    )
+
+    consistency_test = farms.loc[farms["n_farm_sizes"] > 1].copy()
+
+    if not consistency_test.empty:
+        warnings.warn("IACS dataframe has multiple farm sizes for a single farm!")
+    else:
+        print("Consistency test passed.")
+
+    farms["range_field_sizes"] = farms["max_field_size"] - farms["min_field_size"]
+    farms["range_field_ratio"] = farms["range_field_sizes"] / farms["farm_size"]
+    farms["max_field_ratio"] = farms["max_field_size"] / farms["farm_size"]
+    farms["min_field_ratio"] = farms["min_field_size"] / farms["farm_size"]
+    farms["diff_ratios"] = farms["max_field_ratio"] - farms["min_field_ratio"]
+
+    farms["log_max_field_ratio"] = np.log(farms["max_field_ratio"])
+    farms["log_min_field_ratio"] = np.log(farms["min_field_ratio"])
+    farms["log_farm_size"] = np.log(farms["farm_size"])
+
+    farms["farm_size_class"] = pd.cut(farms["farm_size"], [0, 10, 25, 100, 250, 1000, 2500], labels=[10, 25, 100, 250, 1000, 2500])
+    farms["farm_size_class"] = pd.qcut(x=farms["farm_size"], q=10, labels=[1,2,3,4,5,6,7,8,9,10])
+
+
+    fig, axs = plt.subplots(nrows=3, ncols=1)
+    sns.scatterplot(data=farms, x="farm_size", y="max_field_ratio", s=3, hue="num_fields", ax=axs[0])
+    sns.scatterplot(data=farms, x="farm_size", y="min_field_ratio", s=3, ax=axs[1])
+    sns.scatterplot(data=farms, x="farm_size", y="max_field_ratio", s=3, ax=axs[2])
+    sns.scatterplot(data=farms, x="farm_size", y="min_field_ratio", s=3, ax=axs[2])
+    fig.tight_layout()
+
+    fig, axs = plt.subplots()
+    sns.scatterplot(data=farms, x="farm_size", y="diff_ratios", s=3, ax=axs)
+    fig.tight_layout()
+
+    fig, axs = plt.subplots()
+    sns.scatterplot(data=farms, x="farm_size", y="range_field_ratio", s=3, ax=axs)
+    fig.tight_layout()
+
+    fig, axs = plt.subplots()
+    sns.scatterplot(data=farms, x="farm_size", y="max_field_ratio", s=3, ax=axs)
+    sns.scatterplot(data=farms, x="farm_size", y="min_field_ratio", s=3, ax=axs)
+    axs.set_xlabel("Farm size [ha]")
+    axs.set_ylabel("ratio of max. (blue) and min. (orange) field sizes")
+    fig.tight_layout()
+    plt.savefig(fr"figures\scatterplot_max+min_field_ratios.png")
+
+    fig, axs = plt.subplots()
+    sns.boxplot(data=farms, x="farm_size_class", y="min_field_size", showfliers=False, ax=axs)
+    axs.set_xlabel("Deciles of farm sizes")
+    axs.set_ylabel("Min. field size [ha]")
+    fig.tight_layout()
+    plt.savefig(fr"figures\boxplot_max_field_sizes.png")
+
+    fig, axs = plt.subplots()
+    sns.boxplot(data=farms, x="farm_size_class", y="max_field_size", showfliers=False, ax=axs)
+    axs.set_xlabel("Deciles of farm sizes")
+    axs.set_ylabel("Max. field size [ha]")
+    fig.tight_layout()
+    plt.savefig(fr"figures\boxplot_min_field_sizes.png")
+
+    print("done!")
 
 
 def farm_field_regression_in_hexagons(hex_shp, iacs, hexa_id_col, farm_id_col, field_id_col=None, field_size_col=None,
@@ -298,12 +379,22 @@ def main():
 
     key = "ALL"
     pth = fr"data\vector\IACS\IACS_{key}_2018_new.shp"
-    iacs = prepare_large_iacs_shp(
-        input_dict=input_dict,
-        out_pth=pth
+    # iacs = prepare_large_iacs_shp(
+    #     input_dict=input_dict,
+    #     out_pth=pth
+    # )
+    iacs = gpd.read_file(pth)
+
+
+    ## Explore field sizes
+    explore_field_sizes(
+        iacs=iacs,
+        farm_id_col="farm_id",
+        field_id_col="field_id",
+        field_size_col="field_size",
+        farm_size_col="farm_size"
     )
-    # iacs = gpd.read_file(pth)
-    #
+
     # ## Get some basic statistics
     # iacs["fstate"] = iacs["field_id"].apply(lambda x: x.split('_')[0])
     # df_stat = iacs.groupby("fstate").agg(

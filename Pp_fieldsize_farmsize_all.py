@@ -1,36 +1,31 @@
 #Script for preparing variables at field level for Brandenburg
-#variables: slope, elevation, ###Crop Sequence Type###, useable field capacity, soil water, 
-#spatial belonging to hexagon in hexagongrid, former DDR-member or not
-
+#variables at field level: slope, elevation, ###Crop Sequence Type Majority###, useable field capacity, soil water,  #former DDR-member or not, spatial belonging to hexagon in hexagongrid
+#variables at hexagon level: Number of fields in hexagon,sd ELevtation /ruggedness per hexagon, proportion of agricultural areas per hexagon
 
 #Franziska Frankenfeld
 #----------------------------------------------------------------------------------------------------
 ##import required modules
-import pandas as pd;
-import geopandas as gp;
-
-from osgeo import gdal,osr;
-import numpy as np;
-import rasterio;
-from rasterstats import zonal_stats;
+import pandas as pd
+import geopandas as gp
+from osgeo import gdal,osr
+import numpy as np
+import rasterio
+from rasterstats import zonal_stats
 from rasterio.mask import mask
 from scipy import stats
 import shapely
 from shapely import wkt
 #----------------------------------------------------------------------------------------------------
-
 #data input directory
 data_in = "//141.20.140.92/SAN_Projects/FORLand/Field_farm_size_relationship/data/"
 #data output directory
 data_out = "//141.20.140.92/SAN_Projects/FORLand/Field_farm_size_relationship/data/"
 
 #----------------------------------------------------------------------------------------------------
-
 ###VECTOR DATA PROCESSING
-
 ##read vector data
 #invekos
-inv_3035 = gp.read_file(data_in+"vector/IACS/IACS_ALL_2018_3035_validated.shp")
+inv_3035 = gp.read_file(data_in+"vector/IACS/IACS_ALL_2018_NEW_3035.shp")
 inv_3035 = inv_3035.dropna()
 
 #hexagon grid
@@ -46,6 +41,36 @@ print(type(inv_3035))
 print(type(hexa_3035))
 print(inv_3035.crs) 
 print(hexa_3035.crs) 
+
+#----------------------------------------------------------------------------------------------------
+#calculate field sizes and hexagon sizes
+
+#calculate field size
+inv_3035["fieldSizeM2"] = inv_3035.area
+#drop old field size column
+inv_3035.drop(["field_size"], axis=1, inplace=True)
+
+#calculate area size per hexagon
+hexa_3035["hexaSizeM2"] = hexa_3035.area
+
+#rename id to hex_id for clarity
+hexa_3035.rename(columns={'id': 'hexa_id'}, inplace=True)
+
+#----------------------------------------------------------------------------------------------------
+###Count number of fields per farm
+
+grouped = inv_3035.groupby('farm_id').size()
+print(grouped)
+
+#convert series to dataframe
+df = grouped.to_frame().reset_index()
+df = df.rename(columns= {0: 'fieldCountPerHexagon'})
+df.index.name = 'index'
+print(df)
+
+#merge to invekos dataframe
+inv_3035 = pd.merge(inv_3035, df[["farm_id", "fieldCountPerHexagon"]], how="left", on="farm_id")
+print(inv_3035)
 
 #----------------------------------------------------------------------------------------------------
 
@@ -79,12 +104,11 @@ len(inv_3035[inv_3035['FormerDDRmember']==0])
 len(inv_3035[inv_3035['FormerDDRmember']==999]) 
 
 #----------------------------------------------------------------------------------------------------
+
 #calculate centroids of fields
 
 #do copy of invekos data to avoid problems with changing of datatypes and incompatibility
 inv_c = inv_3035.copy()
-#calculate field area sizes
-#inv_c.loc["fieldsize"] = inv_c.area
 
 #approach by Clemens to get centroids
 inv_c["centroids"] = inv_c["geometry"].centroid
@@ -97,8 +121,35 @@ inv_c.drop(["centroids"],axis=1,inplace=True)
 centroids = gp.GeoDataFrame(centroids, crs=3035)
 centroids = gp.sjoin(centroids, hexa_3035, how="left", op="intersects")
 
-#rename id to hex_id for clarity
-centroids.rename(columns={'id': 'hexa_id'}, inplace=True)
+
+#add centroids info to invekos dataframe
+#check if same length
+print(len(inv_3035))
+print(len(centroids))
+                          
+##Add hexagon id and size to iacs data by joining the centroids values
+inv_3035 = pd.merge(inv_3035, centroids[["field_id", "hexa_id", "hexaSizeM2"]], how="left", on="field_id")
+print(inv_3035)
+
+#----------------------------------------------------------------------------------------------------
+
+##get proportion of agricultural areas per hexagon
+
+#group by hexa id and sum fieldsize
+grouped = inv_3035.groupby(['hexa_id', 'hexaSizeM2'])['fieldSizeM2'].sum().reset_index()
+print(grouped)
+
+#divide by total hexa size to get proportion
+grouped['proportAgri'] = (grouped['fieldSizeM2']/grouped['hexaSizeM2']) 
+print(grouped)
+
+#check if numbers between 0 and 1 only
+print(grouped[grouped['proportAgri'] < 0 ])
+print(grouped[grouped['proportAgri'] > 1])
+
+#add proportion column to invekos df
+inv_3035 = pd.merge(inv_3035, grouped[[ "hexa_id", "proportAgri"]], how="left", on="hexa_id")
+print(inv_3035)
 
 #----------------------------------------------------------------------------------------------------
 #----------------------------------------------------------------------------------------------------
@@ -124,10 +175,6 @@ with rasterio.open(data_in+"raster/Slope_3035.tif") as src:
     print(df_zonal_stats['mean'].isnull().sum()) #8112
     print(len(df_zonal_stats)) #1624222
     
-    #na_val = df_zonal_stats[df_zonal_stats['mean'].isnull()]
-    #print(na_val)
-    #gdf_na = pd.concat([inv_3035, na_val], axis=1)
-    #gdf_na.to_file(data_in+"test_run2/slopeNA_only", driver="ESRI Shapefile")
 
 #adding statistics back to original GeoDataFrame
 slope = pd.concat([inv_3035, df_zonal_stats], axis=1)
@@ -141,7 +188,7 @@ slope.to_file(data_in+"test_run2/slopeAvrg", driver="ESRI Shapefile")
 
 #----------------------------------------------------------------------------------------------------
 
-#calculate average elevation per field
+#calculate average elevation per field and sd elevation per hexagon
 
 with rasterio.open(data_in+"raster/Dem_3035.tif") as src:
     affine = src.transform #using affine transformation matrix
@@ -153,19 +200,33 @@ with rasterio.open(data_in+"raster/Dem_3035.tif") as src:
     array[array==ndval] = np.nan #set no data values to appropriate na-value format
     print(array)  
     
-    df_zonal_stats = pd.DataFrame(zonal_stats(inv_3035, array, all_touched = True, nodata=np.nan, affine=affine, stats=["mean", "std"]))
+    df_zonal_stats = pd.DataFrame(zonal_stats(inv_3035, array, all_touched = True, nodata=np.nan, affine=affine, stats=["mean"]))
     print(df_zonal_stats)
+    
+    df_zonal_stats2 = pd.DataFrame(zonal_stats(hexa_3035, array, all_touched = True, nodata=np.nan, affine=affine,   stats=["std"]))
+    print(df_zonal_stats2)
 
-#adding statistics back to original GeoDataFrame
+    
+    
+#adding field statistics back to original GeoDataFrame
 dem = pd.concat([inv_3035, df_zonal_stats], axis=1)
 
 #rename columns
-dem.rename(columns={'mean': 'ElevationA', 'std': 'sdElevatio'}, inplace=True)
+dem.rename(columns={'mean': 'ElevationA'}, inplace=True)
 print(dem)
 
 #write shapefile
 dem.to_file(data_in+"test_run2/elevationAvrg", driver="ESRI Shapefile")
 
+
+
+#adding hexagon statistics back to original GeoDataFrame
+dem2 = pd.concat([hexa_3035, df_zonal_stats2], axis=1)
+
+#rename columns
+dem2.rename(columns={'std': 'sdElevatio'}, inplace=True)
+print(dem2)
+#use this in the end and merge sdElevation to the complete dataframe using the hexa-ID column
 #----------------------------------------------------------------------------------------------------
 
 #determine most common crop sequence type per field
@@ -186,11 +247,11 @@ with rasterio.open(data_in+"raster/CST/all_2012-2018_CropSeqType_3035.tif") as s
 cst = pd.concat([inv_3035, df_zonal_stats], axis=1)
 
 #rename columns
-cst.rename(columns={'majority': 'CstAvrg'}, inplace=True)
+cst.rename(columns={'majority': 'CstMaj'}, inplace=True)
 print(cst)
 
 #write shapefile
-cst.to_file(data_in+"test_run2/CstAvrg", driver="ESRI Shapefile")
+cst.to_file(data_in+"test_run2/CstMaj", driver="ESRI Shapefile")
 
 # ----------------------------------------------------------------------------------------------------
 
@@ -273,6 +334,8 @@ print(len(slope_new))
 
 dem_new = dem.dropna(subset = ['field_id'])
 print(len(dem_new))
+dem2_new = dem2.dropna(subset = ['hexa_id'])
+print(len(dem2_new))
 
 cst_new = cst.dropna(subset = ['field_id'])
 print(len(cst_new))
@@ -284,7 +347,7 @@ aha_new = aha.dropna(subset = ['field_id'])
 print(len(aha_new))
 
 #merge
-merge1 = pd.merge(slope_new, cst_new[["field_id", "CstAvrg"]], how="left", on="field_id", validate ="one_to_one")
+merge1 = pd.merge(slope_new, cst_new[["field_id", "CstMaj"]], how="left", on="field_id", validate ="one_to_one")
 print(len(merge1))
 
 merge2 = pd.merge(nfk_new, aha_new[["field_id", "AhaacglAvr"]], how="left", on="field_id", validate ="one_to_one")
@@ -297,31 +360,18 @@ final_merge = pd.merge(merge1, merge22[["field_id", "NfkAvrg", "AhaacglAvr","Ele
 print(len(final_merge))
 print(final_merge)
 
-#move geometry column to the end of df
-column_to_move = final_merge.pop("geometry")
-# insert column with insert(location, column_name, column_value)
-final_merge.insert(11, "geometry", column_to_move)
+#merge dem via hexa_id
+final_merge = pd.merge(final_merge, dem2[[ "hexa_id", "sdElevatio"]], how="left", on="hexa_id")
 print(final_merge)
+
+#move geometry column to the end of df
+#column_to_move = final_merge.pop("geometry")
+# insert column with insert(location, column_name, column_value)
+#final_merge.insert(11, "geometry", column_to_move)
+#print(final_merge)
 
 #write shapefile
 final_merge.to_file(data_in+"test_run2/all_predictors", driver="ESRI Shapefile")
-
-
-#----------------------------------------------------------------------------------------------------
-#add centroids info
-
-print(len(final_merge))
-print(len(centroids))
-                          
-## Add hexagon id to iacs data by joining the centroids values
-inv_compl = pd.merge(final_merge, centroids[["field_id", "hexa_id"]], how="left", on="field_id")
-print(inv_compl)
-
-#move geometry column to the end of df
-column_to_move = inv_compl.pop("geometry")
-# insert column with insert(location, column_name, column_value)
-inv_compl.insert(12, "geometry", column_to_move)
-print(inv_compl)
 
 #----------------------------------------------------------------------------------------------------
 
