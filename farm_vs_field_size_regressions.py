@@ -13,6 +13,7 @@ import numpy as np
 import warnings
 import seaborn as sns
 import matplotlib.pyplot as plt
+from osgeo import gdal
 
 # project library for plotting
 import plotting_lib
@@ -21,113 +22,7 @@ WD = r"Q:\FORLand\Field_farm_size_relationship"
 
 
 ## ------------------------------------------ DEFINE FUNCTIONS ------------------------------------------------#
-def get_field_names(shp):
-    """
-    :param shp: Shapefile to get the field names from
-    :return: List of all field names
-    """
-    from osgeo import ogr
 
-    lyr = shp.GetLayer()
-    lyr_def = lyr.GetLayerDefn()
-
-    fname_lst = []
-    for i in range(lyr_def.GetFieldCount()):
-        fname = lyr_def.GetFieldDefn(i).GetName()
-        fname_lst.append(fname)
-
-    return fname_lst
-
-
-def classify_crops(shp_pth, kart_fname, kartk_fname):
-    from osgeo import ogr
-
-    ## open reference table
-    ## ToDo: Replace path. move file
-    df_m = pd.read_excel(r"Daten\vector\InVekos\Tables\UniqueCropCodes_AllYrsAndBundeslaender.xlsx",
-                         sheet_name='UniqueCodes')
-
-    ## loop over shapefiles, add new column and fill it with code for the kulturtyp
-    shp = ogr.Open(shp_pth, 1)
-    lyr = shp.GetLayer()
-
-    ## get list of field names
-    fname_lst = get_field_names(shp)
-
-    ## column name of Kulturtypen
-    fname_ktyp = "ID_KTYP"
-    fname_ws = "ID_WiSo"
-    fname_cl = "ID_HaBl"
-
-    ## check if this column name already exists
-    ## if yes, then no new column will be created
-    ## if not, then the column will be created and the field name list will be updated
-    for col_name in [fname_ktyp, fname_ws, fname_cl]:
-        if fname_ktyp in fname_lst:
-            print("The field {0} exists already in the layer.".format(col_name))
-        else:
-            lyr.CreateField(ogr.FieldDefn(col_name, ogr.OFTInteger))
-            fname_lst = get_field_names(shp)
-
-    ## loop over features and set kulturtyp and WinterSummer-code depending on the k_art code,
-    ## set CerealLeaf-Code depending on kulturtyp
-    for f, feat in enumerate(lyr):
-        fid = feat.GetField("ID")
-
-        ## get kulturart code
-        kart = feat.GetField(kart_fname)  ##
-        if not kart:
-            continue
-        kart = int(kart)  # convert string to int
-
-        ## get kulturart name
-        ## Although all umlaute were replaced, there are some encoding issues.
-        ## After every replaced Umlaut, there is still a character, that can't be decoded by utf-8
-        ## By encoding it again and replacing it with '?', I can remove this character
-        kart_k = feat.GetField(kartk_fname)
-        # print(kart_k)
-        if kart_k != None:
-            # print(kart_k)
-
-            kart_k = kart_k.encode('ISO-8859-1', 'replace')  # utf8| 'windows-1252' turns string to bytes representation
-            # print(kart_k)
-            kart_k = kart_k.replace(b'\xc2\x9d', b'')  # this byte representations got somehow into some strings
-            kart_k = kart_k.replace(b'\xc2\x81', b'')  # this byte representations got somehow into some strings
-            kart_k = kart_k.decode('ISO-8859-1', 'replace')  # turns bytes representation to string
-            kart_k = kart_k.replace('?', '')
-            kart_k = kart_k.replace('ä', 'ae')
-            kart_k = kart_k.replace('ö', 'oe')
-            kart_k = kart_k.replace('ü', 'ue')
-            kart_k = kart_k.replace('ß', 'ss')
-            kart_k = kart_k.replace('Ä', 'Ae')
-            kart_k = kart_k.replace('Ö', 'Oe')
-            kart_k = kart_k.replace('Ü', 'Ue')
-        else:
-            pass
-
-        identifier = '{}_{}'.format(kart, kart_k)
-        error_lst = []
-
-        if identifier in df_m['K_ART_UNIQUE_noUmlaute']:
-            ktyp = df_m['ID_KULTURTYP4_FL'].loc[df_m['K_ART_UNIQUE_noUmlaute'] == identifier]  # returns a pd Series
-            ktyp = ktyp.iloc[0]  # extracts value from pd Series
-
-            ws = df_m['ID_WinterSommer'].loc[df_m['K_ART_UNIQUE_noUmlaute'] == identifier]  # returns a pd Series
-            ws = ws.iloc[0]  # extracts value from pd Series
-
-            cl = df_m['ID_HalmfruchtBlattfrucht'].loc[
-                df_m['K_ART_UNIQUE_noUmlaute'] == identifier]  # returns a pd Series
-            cl = cl.iloc[0]
-
-            length = len(fname_lst)
-
-            feat.SetField(length - 3, int(ktyp))
-            feat.SetField(length - 2, int(ws))
-            feat.SetField(length - 1, int(cl))
-            lyr.SetFeature(feat)
-        else:
-            error_lst.append(identifier)
-    lyr.ResetReading()
 
 def prepare_large_iacs_shp(input_dict, out_pth):
     print("Join all IACS files together.")
@@ -329,8 +224,81 @@ def farm_field_regression_in_hexagons(hex_shp, iacs, hexa_id_col, farm_id_col, f
     return model_results
 
 
+def compare_nfk_and_sqr(nfk_pth, sqr_pth, out_pth):
+
+    nfk_ras = gdal.Open(nfk_pth)
+    nfk_ndv = nfk_ras.GetRasterBand(1).GetNoDataValue()
+    nfk = nfk_ras.ReadAsArray()
+
+    sqr_ras = gdal.Open(sqr_pth)
+    sqr_ndv = sqr_ras.GetRasterBand(1).GetNoDataValue()
+    sqr = sqr_ras.ReadAsArray()
+
+    ndv_mask = nfk.copy()
+    ndv_mask[ndv_mask != nfk_ndv] = 1
+    ndv_mask[ndv_mask == nfk_ndv] = 0
+    ndv_mask[sqr == sqr_ndv] = 0
+
+    nfk[ndv_mask == 0] = np.nan
+    sqr[ndv_mask == 0] = np.nan
+
+    df = pd.DataFrame({"nfk": nfk.flatten(), "sqr": sqr.flatten()})
+    df.dropna(inplace=True)
+
+    fig, ax = plt.subplots()
+    sns.scatterplot(data=df, x="nfk", y="sqr", s=1, edgecolor="none", ax=ax)
+    ax.annotate(f"Corr. :{round(df['nfk'].corr(df['sqr']), 2)}", (300, 20))
+    fig.tight_layout()
+    plt.savefig(out_pth)
+    print("done!")
 
 
+def compare_sqr_nas(iacs_sqr_pth, out_pth):
+
+    iacs = gpd.read_file(iacs_sqr_pth)
+
+    iacs["na"] = 0
+    iacs.loc[iacs["_mean"].isna(), "na"] = 1
+    iacs["ft"] = iacs["CstMaj"].apply(lambda x: str(int(x))[1] if x != 0 else 0)
+    iacs["state"] = iacs["field_id"].apply(lambda x: x[:2])
+
+    na_overview = iacs.groupby(["state", "na"]).agg(
+        field_count=pd.NamedAgg("field_id", "count")
+    ).reset_index()
+    na_overview["share"] = na_overview['field_count'] / na_overview.groupby('state')['field_count'].transform('sum') * 100
+    na_overview.sort_values(by="na", inplace=True)
+    na_overview.to_csv(r"data\tables\overview_NAs_sqr.csv")
+
+    csts = iacs.groupby(["ft", "na"]).agg(
+        field_count=pd.NamedAgg("field_id", "count")
+    ).reset_index()
+    csts["share"] = csts['field_count'] / csts.groupby('na')['field_count'].transform('sum') * 100
+
+    fig, axs = plt.subplots(nrows=3, ncols=3, figsize=plotting_lib.cm2inch(30, 30))
+    sns.kdeplot(data=iacs, x="farm_size", hue="na", ax=axs[0, 0])
+    axs[0, 0].set(xscale="log")
+    axs[0, 0].set_xlabel("log(farm size)")
+    sns.kdeplot(data=iacs, x="fieldSizeM", hue="na", ax=axs[0, 1])
+    axs[0, 1].set(xscale="log")
+    axs[0, 1].set_xlabel("log(field size)")
+    sns.kdeplot(data=iacs, x="proportAgr", hue="na", ax=axs[0, 2])
+    axs[0, 2].set_xlabel("proportion Agric.")
+    sns.kdeplot(data=iacs, x="ElevationA", hue="na", ax=axs[1, 0])
+    axs[1, 0].set_xlabel("Elevation of field")
+    sns.kdeplot(data=iacs, x="SlopeAvrg", hue="na", ax=axs[1, 1])
+    axs[1, 1].set_xlabel("Slope of field")
+    sns.kdeplot(data=iacs, x="NfkAvrg", hue="na", ax=axs[1, 2])
+    axs[1, 2].set_xlabel("Usable field capacity")
+    sns.kdeplot(data=iacs, x="fieldCount", hue="na", ax=axs[2, 0])
+    axs[2, 0].set_xlabel("Field count of farm")
+    sns.kdeplot(data=iacs, x="AhaacglAvr", hue="na", ax=axs[2, 1])
+    axs[2, 1].set_xlabel("AhaacglAvr - Wasseraustausch?")
+    sns.barplot(data=csts, x="ft", y="share", hue="na", ax=axs[2, 2])
+    axs[2, 2].set_xlabel("Functional diversity")
+    fig.tight_layout()
+    # plt.show()
+    plt.savefig(out_pth)
+    print("done!")
 
 ## ------------------------------------------ RUN PROCESSES ---------------------------------------------------#
 def main():
@@ -379,20 +347,31 @@ def main():
 
     key = "ALL"
     pth = fr"data\vector\IACS\IACS_{key}_2018_new.shp"
+
     # iacs = prepare_large_iacs_shp(
     #     input_dict=input_dict,
     #     out_pth=pth
     # )
-    iacs = gpd.read_file(pth)
-
+    # iacs = gpd.read_file(pth)
 
     ## Explore field sizes
-    explore_field_sizes(
-        iacs=iacs,
-        farm_id_col="farm_id",
-        field_id_col="field_id",
-        field_size_col="field_size",
-        farm_size_col="farm_size"
+    # explore_field_sizes(
+    #     iacs=iacs,
+    #     farm_id_col="farm_id",
+    #     field_id_col="field_id",
+    #     field_size_col="field_size",
+    #     farm_size_col="farm_size"
+    # )
+
+    # compare_nfk_and_sqr(
+    #     nfk_pth=r"Q:\FORLand\Field_farm_size_relationship\data\raster\NFKWe1000_250_3035.tif",
+    #     sqr_pth=r"Q:\FORLand\Field_farm_size_relationship\data\raster\sqr1000_250_v10_3035.tif",
+    #     out_pth=r"Q:\FORLand\Field_farm_size_relationship\figures\nfk_vs_sqr.png"
+    # )
+
+    compare_sqr_nas(
+        iacs_sqr_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\all_predictors_sqr.shp",
+        out_pth=r"figures\kde_sqr_na_comparison.png"
     )
 
     # ## Get some basic statistics
