@@ -252,54 +252,6 @@ def compare_nfk_and_sqr(nfk_pth, sqr_pth, out_pth):
     plt.savefig(out_pth)
     print("done!")
 
-
-def compare_sqr_nas(iacs_sqr_pth, out_pth):
-
-    iacs = gpd.read_file(iacs_sqr_pth)
-
-    iacs["na"] = 0
-    iacs.loc[iacs["_mean"].isna(), "na"] = 1
-    iacs["ft"] = iacs["CstMaj"].apply(lambda x: str(int(x))[1] if x != 0 else 0)
-    iacs["state"] = iacs["field_id"].apply(lambda x: x[:2])
-
-    na_overview = iacs.groupby(["state", "na"]).agg(
-        field_count=pd.NamedAgg("field_id", "count")
-    ).reset_index()
-    na_overview["share"] = na_overview['field_count'] / na_overview.groupby('state')['field_count'].transform('sum') * 100
-    na_overview.sort_values(by="na", inplace=True)
-    na_overview.to_csv(r"data\tables\overview_NAs_sqr.csv")
-
-    csts = iacs.groupby(["ft", "na"]).agg(
-        field_count=pd.NamedAgg("field_id", "count")
-    ).reset_index()
-    csts["share"] = csts['field_count'] / csts.groupby('na')['field_count'].transform('sum') * 100
-
-    fig, axs = plt.subplots(nrows=3, ncols=3, figsize=plotting_lib.cm2inch(30, 30))
-    sns.kdeplot(data=iacs, x="farm_size", hue="na", ax=axs[0, 0])
-    axs[0, 0].set(xscale="log")
-    axs[0, 0].set_xlabel("log(farm size)")
-    sns.kdeplot(data=iacs, x="fieldSizeM", hue="na", ax=axs[0, 1])
-    axs[0, 1].set(xscale="log")
-    axs[0, 1].set_xlabel("log(field size)")
-    sns.kdeplot(data=iacs, x="proportAgr", hue="na", ax=axs[0, 2])
-    axs[0, 2].set_xlabel("proportion Agric.")
-    sns.kdeplot(data=iacs, x="ElevationA", hue="na", ax=axs[1, 0])
-    axs[1, 0].set_xlabel("Elevation of field")
-    sns.kdeplot(data=iacs, x="SlopeAvrg", hue="na", ax=axs[1, 1])
-    axs[1, 1].set_xlabel("Slope of field")
-    sns.kdeplot(data=iacs, x="NfkAvrg", hue="na", ax=axs[1, 2])
-    axs[1, 2].set_xlabel("Usable field capacity")
-    sns.kdeplot(data=iacs, x="fieldCount", hue="na", ax=axs[2, 0])
-    axs[2, 0].set_xlabel("Field count of farm")
-    sns.kdeplot(data=iacs, x="AhaacglAvr", hue="na", ax=axs[2, 1])
-    axs[2, 1].set_xlabel("AhaacglAvr - Wasseraustausch?")
-    sns.barplot(data=csts, x="ft", y="share", hue="na", ax=axs[2, 2])
-    axs[2, 2].set_xlabel("Functional diversity")
-    fig.tight_layout()
-    # plt.show()
-    plt.savefig(out_pth)
-    print("done!")
-
 ## ------------------------------------------ RUN PROCESSES ---------------------------------------------------#
 def main():
     s_time = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())
@@ -368,11 +320,6 @@ def main():
     #     sqr_pth=r"Q:\FORLand\Field_farm_size_relationship\data\raster\sqr1000_250_v10_3035.tif",
     #     out_pth=r"Q:\FORLand\Field_farm_size_relationship\figures\nfk_vs_sqr.png"
     # )
-
-    compare_sqr_nas(
-        iacs_sqr_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\all_predictors_sqr.shp",
-        out_pth=r"figures\kde_sqr_na_comparison.png"
-    )
 
     # ## Get some basic statistics
     # iacs["fstate"] = iacs["field_id"].apply(lambda x: x.split('_')[0])

@@ -38,11 +38,22 @@ def draw_sample_with_matched_distributions(iacs_pth, out_pth):
     :return:
     """
 
+    print("Read IACS data.")
     iacs = gpd.read_file(iacs_pth)
     iacs["ft"] = iacs["CstMaj"].apply(lambda x: str(int(x))[1] if x != 0 else 0)
     iacs["state"] = iacs["field_id"].apply(lambda x: x[:2])
-    sqr_col = "_mean"
+
+    sqr_col = "SQRAvrg"
     pred_col = "farm_size"
+
+    iacs["na"] = 0
+    iacs.loc[iacs[sqr_col].isna(), "na"] = 1
+    compare_distributions_of_variables(
+        df=iacs,
+        hue_col="na",
+        hue_dict={0: "reduced dataset", 1: "sqr NAN"},
+        out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\matching\01_comparison_sqr_existent_vs_nan.png"
+    )
 
     ## 1. Draw a random sample of all data including NAs
     n = int(len(iacs) * 0.02)
@@ -50,8 +61,8 @@ def draw_sample_with_matched_distributions(iacs_pth, out_pth):
     # iacs_rsample.to_file(r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\all_predictors_sqr_sub.shp")
     iacs_rsample["treatment"] = 1
     print("Length of random sample including NAs:", len(iacs_rsample))
-    print("No. of NAs in random sample:", len(iacs_rsample.loc[iacs_rsample["_mean"].isna()]))
-    print("No. complete observations in random sample:", len(iacs_rsample.loc[iacs_rsample["_mean"].notna()]))
+    print("No. of NAs in random sample:", len(iacs_rsample.loc[iacs_rsample[sqr_col].isna()]))
+    print("No. complete observations in random sample:", len(iacs_rsample.loc[iacs_rsample[sqr_col].notna()]))
 
     ## 2. Remove NAs from complete dataset --> reduced dataset
     iacs_red = iacs.loc[iacs[sqr_col].notna()].copy()
@@ -67,7 +78,7 @@ def draw_sample_with_matched_distributions(iacs_pth, out_pth):
         df=df,
         hue_col="treatment",
         hue_dict={0: "reduced dataset", 1: "random sample"},
-        out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\matching\01_comparison_random_sample_with_reduced_df.png"
+        out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\matching\02_comparison_random_sample_with_reduced_df.png"
     )
 
     ## 3. Match reduced dataset with random sample to get a sample with similar distributions in all variables
@@ -191,17 +202,21 @@ def draw_sample_with_matched_distributions(iacs_pth, out_pth):
     print("No. of matched samples", len(matched_sample))
 
     ## compare matched sample with random sample
+    # iacs["treatment"] = 2
+    # iacs = iacs[iacs_out.columns]
     df_plt = pd.concat([iacs_rsample, iacs_out])
     compare_distributions_of_variables(
         df=df_plt,
         hue_col="treatment",
-        hue_dict={1: "random sample", 0: "matched sample"},
-        out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\matching\02_comparison_random_sample_with_matched_sample.png"
+        hue_dict={1: "random sample", 0: "matched sample", 2: "full dataset"},
+        out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\matching\03_comparison_random_sample_with_matched_sample.png"
     )
 
 
 
 def compare_distributions_of_variables(df, hue_col, out_pth, hue_dict=None):
+
+    print("Plot densities of covariates.")
 
     ## Do this to not change original df
     df_plt = df.copy()
@@ -218,6 +233,11 @@ def compare_distributions_of_variables(df, hue_col, out_pth, hue_dict=None):
         field_count=pd.NamedAgg("field_id", "count")
     ).reset_index()
     cts["share"] = cts['field_count'] / cts.groupby(hue_col)['field_count'].transform('sum') * 100
+
+    st = df_plt.groupby(["state", hue_col]).agg(
+        field_count=pd.NamedAgg("field_id", "count")
+    ).reset_index()
+    st["share"] = st['field_count'] / st.groupby(hue_col)['field_count'].transform('sum') * 100
 
     fig, axs = plt.subplots(nrows=4, ncols=3, figsize=plotting_lib.cm2inch(30, 30))
     sns.kdeplot(data=df_plt, x="farm_size", hue=hue_col, ax=axs[0, 0])
@@ -242,6 +262,8 @@ def compare_distributions_of_variables(df, hue_col, out_pth, hue_dict=None):
     axs[2, 2].set_xlabel("Functional diversity")
     sns.barplot(data=cts, x="ID_KTYP", y="share", hue=hue_col, ax=axs[3, 0])
     axs[3, 0].set_xlabel("Crop class")
+    sns.barplot(data=st, x="state", y="share", hue=hue_col, ax=axs[3, 1])
+    axs[3, 1].set_xlabel("State")
     fig.tight_layout()
     plt.savefig(out_pth)
     print("Plotting distribution comparison done!")
@@ -255,8 +277,8 @@ def main():
     os.chdir(WD)
 
     draw_sample_with_matched_distributions(
-        iacs_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\all_predictors_sqr_sub.shp",
-        out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\matched_sample.shp"
+        iacs_pth=r"Q:\FORLand\Field_farm_size_relationship\data\test_run2\all_predictors\all_predictors.shp",
+        out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\matched_sample-v2.shp"
     )
 
 
