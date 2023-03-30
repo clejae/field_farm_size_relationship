@@ -124,7 +124,6 @@ def draw_sample_with_matched_distributions(iacs_pth, out_pth):
     f.close()
     predictions_logit = np.array([logit(xi) for xi in predictions[:, 1]])
 
-
     df_data.loc[:, 'propensity_score'] = predictions[:, 1]
     df_data.loc[:, 'propensity_score_logit'] = predictions_logit
     df_data.loc[:, 'outcome'] = y[pred_col]
@@ -197,7 +196,7 @@ def draw_sample_with_matched_distributions(iacs_pth, out_pth):
     )
 
     iacs_out = iacs_red.loc[iacs_red["field_id"].isin(matched_sample["field_id"].tolist())].copy()
-    iacs_out.to_file(out_pth)
+    # iacs_out.to_file(out_pth)
 
     print("No. of matched samples", len(matched_sample))
 

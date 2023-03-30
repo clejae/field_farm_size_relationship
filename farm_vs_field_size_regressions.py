@@ -97,42 +97,44 @@ def explore_field_sizes(iacs, farm_id_col, field_id_col, field_size_col, farm_si
     farms["farm_size_class"] = pd.qcut(x=farms["farm_size"], q=10, labels=[1,2,3,4,5,6,7,8,9,10])
 
 
-    fig, axs = plt.subplots(nrows=3, ncols=1)
-    sns.scatterplot(data=farms, x="farm_size", y="max_field_ratio", s=3, hue="num_fields", ax=axs[0])
-    sns.scatterplot(data=farms, x="farm_size", y="min_field_ratio", s=3, ax=axs[1])
-    sns.scatterplot(data=farms, x="farm_size", y="max_field_ratio", s=3, ax=axs[2])
-    sns.scatterplot(data=farms, x="farm_size", y="min_field_ratio", s=3, ax=axs[2])
-    fig.tight_layout()
+    # fig, axs = plt.subplots(nrows=3, ncols=1)
+    # sns.scatterplot(data=farms, x="farm_size", y="max_field_ratio", s=3, hue="num_fields", ax=axs[0])
+    # sns.scatterplot(data=farms, x="farm_size", y="min_field_ratio", s=3, ax=axs[1])
+    # sns.scatterplot(data=farms, x="farm_size", y="max_field_ratio", s=3, ax=axs[2])
+    # sns.scatterplot(data=farms, x="farm_size", y="min_field_ratio", s=3, ax=axs[2])
+    # fig.tight_layout()
+    #
+    # fig, axs = plt.subplots()
+    # sns.scatterplot(data=farms, x="farm_size", y="diff_ratios", s=3, ax=axs)
+    # fig.tight_layout()
+    #
+    # fig, axs = plt.subplots()
+    # sns.scatterplot(data=farms, x="farm_size", y="range_field_ratio", s=3, ax=axs)
+    # fig.tight_layout()
+    #
+    # fig, axs = plt.subplots()
+    # sns.scatterplot(data=farms, x="farm_size", y="max_field_ratio", s=3, ax=axs)
+    # sns.scatterplot(data=farms, x="farm_size", y="min_field_ratio", s=3, ax=axs)
+    # axs.set_xlabel("Farm size [ha]")
+    # axs.set_ylabel("ratio of max. (blue) and min. (orange) field sizes")
+    # fig.tight_layout()
+    # plt.savefig(fr"figures\scatterplot_max+min_field_ratios.png")
 
-    fig, axs = plt.subplots()
-    sns.scatterplot(data=farms, x="farm_size", y="diff_ratios", s=3, ax=axs)
+    fig, axs = plt.subplots(nrows=1, ncols=2, figsize=plotting_lib.cm2inch((16, 6)))
+    sns.boxplot(data=farms, x="farm_size_class", y="min_field_size", showfliers=False, ax=axs[1])
+    axs[1].set_xlabel("Deciles of farm sizes")
+    axs[1].set_ylabel("Min. field size [ha]")
+    axs[1].set_title("b)", loc="left")
+    axs[1].grid(visible=True, which="major", axis="y", zorder=0)
+    axs[1].set_axisbelow(True)
+    sns.boxplot(data=farms, x="farm_size_class", y="max_field_size", showfliers=False, ax=axs[0])
+    axs[0].set_xlabel("Deciles of farm sizes")
+    axs[0].set_ylabel("Max. field size [ha]")
+    axs[0].set_title("a)", loc="left")
+    axs[0].grid(visible=True, which="major", axis="y", zorder=0)
+    axs[0].set_axisbelow(True)
     fig.tight_layout()
-
-    fig, axs = plt.subplots()
-    sns.scatterplot(data=farms, x="farm_size", y="range_field_ratio", s=3, ax=axs)
-    fig.tight_layout()
-
-    fig, axs = plt.subplots()
-    sns.scatterplot(data=farms, x="farm_size", y="max_field_ratio", s=3, ax=axs)
-    sns.scatterplot(data=farms, x="farm_size", y="min_field_ratio", s=3, ax=axs)
-    axs.set_xlabel("Farm size [ha]")
-    axs.set_ylabel("ratio of max. (blue) and min. (orange) field sizes")
-    fig.tight_layout()
-    plt.savefig(fr"figures\scatterplot_max+min_field_ratios.png")
-
-    fig, axs = plt.subplots()
-    sns.boxplot(data=farms, x="farm_size_class", y="min_field_size", showfliers=False, ax=axs)
-    axs.set_xlabel("Deciles of farm sizes")
-    axs.set_ylabel("Min. field size [ha]")
-    fig.tight_layout()
-    plt.savefig(fr"figures\boxplot_max_field_sizes.png")
-
-    fig, axs = plt.subplots()
-    sns.boxplot(data=farms, x="farm_size_class", y="max_field_size", showfliers=False, ax=axs)
-    axs.set_xlabel("Deciles of farm sizes")
-    axs.set_ylabel("Max. field size [ha]")
-    fig.tight_layout()
-    plt.savefig(fr"figures\boxplot_min_field_sizes.png")
+    plt.savefig(fr"figures\boxplot_min_max_field_sizes_per_farm_decile.png")
 
     print("done!")
 
@@ -172,6 +174,16 @@ def farm_field_regression_in_hexagons(hex_shp, iacs, hexa_id_col, farm_id_col, f
         ).reset_index()
         iacs = pd.merge(iacs, farm_sizes, on=farm_id_col, how="left")
 
+    iacs["farm_size_b"] = iacs[farm_size_col] - iacs[field_size_col]
+
+    # test for number of farm sizes per farm id
+    t = iacs.groupby("farm_id").agg(
+        n_farm_sizes=pd.NamedAgg("farm_size", "nunique")
+    ).reset_index()
+    t2 = t.loc[t["n_farm_sizes"] > 1].copy()
+    if not t2.empty:
+        warnings.warn("There are cases of farm_id's that have multiple farm sizes!")
+
     ## Calculate regression explaining farm sizes with field sizes
     print("\tCalculate the regression.")
     def calc_regression(group, log_x=log_x, log_y=log_y):
@@ -184,7 +196,7 @@ def farm_field_regression_in_hexagons(hex_shp, iacs, hexa_id_col, farm_id_col, f
         # group.to_csv(r"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\data\tables\test2.csv")
 
         x = np.array(group["field_size"])
-        y = np.array(group["farm_size"]).T
+        y = np.array(group["farm_size_b"]).T
 
         x = sm.add_constant(x)
         model = sm.OLS(y, x)
@@ -333,7 +345,7 @@ def main():
     # df_stat["mean_farm_size"] = df_stat["area"] / df_stat["num_farms"]
     #
     # df_stat.to_csv(r"data\tables\general_stats.csv", index=False)
-    # print("Done calculating general statistics.")
+    print("Done calculating general statistics.")
 
     # for hexasize in [30, 15, 5, 1]:
     #     hexagon_pth = fr"data\vector\grid\hexagon_grid_germany_{hexasize}km.shp"
@@ -352,34 +364,46 @@ def main():
     #     )
     #     pth = fr"data\vector\grid\hexagon_grid_{key}_{hexasize}km_with_values.shp"
     #     model_results_shp.to_file(pth)
-    #
-    # for hexasize in [1, 5, 15, 30]:
-    #     pth = fr"data\vector\grid\hexagon_grid_{key}_{hexasize}km_with_values.shp"
-    #     model_results_shp = gpd.read_file(pth)
-    #     model_results_shp.replace([np.inf, -np.inf], np.nan, inplace=True)
-    #     model_results_shp.dropna(subset=["rsquared"], how="all", inplace=True)
-    #     model_results_shp = model_results_shp[model_results_shp["num_farms"] > 1].copy()
-    #     if hexasize == 1:
-    #         dpi = 600
-    #         figsize = (40, 24)
-    #     else:
-    #         dpi = 300
-    #         figsize = (20, 12)
-    #
-    #     plotting_lib.plot_maps_in_grid(
-    #         shp=model_results_shp,
-    #         out_pth=fr"figures\maps\{key}_model_results_logscaled_{hexasize}km.png",
-    #         cols=["intercept", "slope", "rsquared", "num_farms", "num_fields", "avgfield_s", "avgfarm_s"],
-    #         nrow=2,
-    #         ncol=4,
-    #         figsize=figsize,
-    #         dpi=dpi,
-    #         shp2_pth=fr"data\vector\administrative\GER_bundeslaender.shp",
-    #         titles=["intercept", "slope", "rsquared", "num farms", "num fields", "mean field size [ha]",
-    #                 "mean farm size [ha]"],
-    #         highlight_extremes=False
-    #     )
-    #
+
+    for hexasize in [30, 15, 5, 1]:
+        pth = fr"data\vector\grid\hexagon_grid_{key}_{hexasize}km_with_values.shp"
+        model_results_shp = gpd.read_file(pth)
+        model_results_shp.replace([np.inf, -np.inf], np.nan, inplace=True)
+        model_results_shp.dropna(subset=["rsquared"], how="all", inplace=True)
+        model_results_shp = model_results_shp[model_results_shp["num_farms"] > 1].copy()
+        if hexasize == 1:
+            dpi = 600
+            figsize = (40, 24)
+        else:
+            dpi = 300
+            figsize = (20, 12)
+
+        plotting_lib.plot_maps_in_grid(
+            shp=model_results_shp,
+            out_pth=fr"figures\maps\{key}_model_results_logscaled_{hexasize}km.png",
+            cols=["intercept", "slope", "rsquared"],
+            nrow=1,
+            ncol=3,
+            figsize=figsize,
+            dpi=dpi,
+            shp2_pth=fr"data\vector\administrative\GER_bundeslaender.shp",
+            titles=["intercept", "slope", "rsquared"],
+            highlight_extremes=False
+        )
+
+        plotting_lib.plot_maps_in_grid(
+            shp=model_results_shp,
+            out_pth=fr"figures\maps\{key}_num_farms_fields+sizes_{hexasize}km.png",
+            cols=["num_farms", "num_fields", "avgfield_s", "avgfarm_s"],
+            nrow=1,
+            ncol=4,
+            figsize=figsize,
+            dpi=dpi,
+            shp2_pth=fr"data\vector\administrative\GER_bundeslaender.shp",
+            titles=["no. farms", "no. fields", "mean field size [ha]", "mean farm size [ha]"],
+            highlight_extremes=False
+        )
+
     # pth1 = fr"data\vector\grid\hexagon_grid_{key}_1km_with_values.shp"
     # pth5 = fr"data\vector\grid\hexagon_grid_{key}_5km_with_values.shp"
     # pth15 = fr"data\vector\grid\hexagon_grid_{key}_15km_with_values.shp"
@@ -399,13 +423,13 @@ def main():
     # df.dropna(subset=["rsquared"], how="all", inplace=True)
     # df = df[df["num_farms"] > 1].copy()
     # df["num_farms_bins"] = pd.cut(df["num_farms"], [0, 10, 25, 100, 250, 1000, 2500])
-
-    # fig, ax = plt.subplots(1, 1, figsize=cm2inch(15, 10))
+    #
+    # fig, ax = plt.subplots(1, 1, figsize=plotting_lib.cm2inch(15, 10))
     # sns.jointplot(data=df,  x="num_farms", y="rsquared", kind="kde")
     # fig.tight_layout()
     # plt.savefig(fr"figures\num_farms_vs_rsquared.png", dpi=300)
     # plt.close()
-
+    #
     # plotting_lib.scatterplot_two_columns(
     #     df=df,
     #     out_pth=fr"figures\num_farms_vs_rsquared.png",
@@ -413,7 +437,7 @@ def main():
     #     col2="rsquared",
     #     hue="df"
     # )
-
+    #
     # plotting_lib.boxplots_in_grid(
     #     df=df,
     #     out_pth=fr"figures\boxplots_hexasize_rsquared2.png",
