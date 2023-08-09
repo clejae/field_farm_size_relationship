@@ -7,20 +7,9 @@
 import time
 import os
 import geopandas as gpd
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-from sklearn.linear_model import LogisticRegression as lr
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.neighbors import NearestNeighbors
-from sklearn import metrics
 
 from prop_match_functions import *
-import numpy as np
 
-# project library for plotting
-import plotting_lib
 ## ------------------------------------------ USER INPUT ------------------------------------------------------#
 WD = r"Q:\FORLand\Field_farm_size_relationship"
 IACS_PTH = r"data\test_run2\all_predictors\all_predictors.shp"
@@ -90,19 +79,23 @@ def main():
     print("start: " + s_time)
     os.chdir(WD)
 
-    sub = gpd.read_file(r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\matched_sample_v1.shp")
-    sub_ids = sub["field_id"].tolist()
+    # sub = gpd.read_file(r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\matched_sample_v1.shp")
+    # sub_ids = sub["field_id"].tolist()
+
+    # calculate_statistics_of_surrounding_fields(
+    #     iacs_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\IACS\IACS_ALL_2018_NEW_3035.shp",
+    #     out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\tables\surrounding_fields_stats_sample.csv",
+    #     sub_ids=sub_ids,
+    #     buffer_radius=1000)
 
     calculate_statistics_of_surrounding_fields(
-        iacs_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\IACS\IACS_ALL_2018_NEW_3035.shp",
-        out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\tables\surrounding_fields_stats_sample.csv",
-        sub_ids=sub_ids,
-        buffer_radius=1000)
-
-    calculate_statistics_of_surrounding_fields(
-        iacs_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\IACS\IACS_ALL_2018_NEW_3035.shp",
+        iacs_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\IACS\IACS_ALL_2018_with_grassland_recl.shp",
         out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\tables\surrounding_fields_stats_ALL.csv",
         buffer_radius=1000)
+
+    ## For all fields+grassland parcels runtime is:
+    # start: Wed, 26 Jul 2023 13:38:08
+    # end: Wed, 26 Jul 2023 15:05:20
 
     e_time = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())
     print("start: " + s_time)

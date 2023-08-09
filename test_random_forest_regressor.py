@@ -10,6 +10,7 @@ import geopandas as gpd
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 import random
 
 from sklearn.ensemble import RandomForestRegressor
@@ -19,7 +20,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn import metrics
 from sklearn.model_selection import train_test_split
 from sklearn.inspection import permutation_importance
-import shap
+# import shap
 
 import numpy as np
 
@@ -33,15 +34,20 @@ SAMPLE_PTH = r"data\vector\final\matched_sample-v2.shp"
 ## ------------------------------------------ DEFINE FUNCTIONS ------------------------------------------------#
 
 
-def train_random_forest_regressor(X, y, n_estimators):
+def train_random_forest_regressor(X, y, n_estimators, scaler=True):
 
     print("Fit regressor")
 
     ## Design pipeline to build the treatment estimator. It standardizes the data and applies a logistic classifier
-    pipe = Pipeline([
-        ('scaler', MinMaxScaler()),  # test Standard Scaler
-        ('regressor', RandomForestRegressor(n_estimators=n_estimators))
-    ])
+    if scaler:
+        pipe = Pipeline([
+            ('scaler', MinMaxScaler()),  # test Standard Scaler
+            ('regressor', RandomForestRegressor(n_estimators=n_estimators))
+        ])
+    else:
+        pipe = Pipeline([
+            ('regressor', RandomForestRegressor(n_estimators=n_estimators))
+        ])
 
     ## Fit the classifier to the data
     pipe.fit(X, y)
@@ -110,12 +116,27 @@ def random_forest_wrapper(iacs_pth, add_vars_pth):
     iacs = pd.merge(iacs, add_vars, how="left", on="field_id")
     iacs["state"] = iacs["field_id"].apply(lambda x: x[:2])
     iacs["fd"] = iacs["CstMaj"].apply(lambda x: str(int(x))[1] if x != 0 else 0)
+    iacs["temp_div_agg"] = 1
+    iacs.loc[iacs["fd"].isin(["1", "2", "3"]), "temp_div_agg"] = "1"
+    iacs.loc[iacs["fd"].isin(["4", "5", "6"]), "temp_div_agg"] = "2"
+    iacs.loc[iacs["fd"].isin(["7", "8", "9"]), "temp_div_agg"] = "3"
+
+    # log_field_size * surrf_mean_log + log_field_size * proportAgr + (1 | state) +
+    # sdElevatio + temp_div_agg + SQRAvrg_log
+
+    iacs["log_farm_size"] = np.log(iacs["farm_size"])
+    iacs["log_field_size"] = np.log(iacs["fieldSizeM"])
+    iacs["log_surrf_mean"] = np.log(iacs["surrf_mean"])
+    iacs["log_soil_quality"] = np.log(iacs["_mean"])
+    iacs["inter_lfs_lsm"] = iacs["log_field_size"] * iacs["log_surrf_mean"]
+    iacs["inter_lfs_pagr"] = iacs["log_field_size"] * iacs["proportAgr"]
 
     ## Define relevant variables
-    dep_var = "farm_size"
-    crop_var = "ID_KTYP" ## choose between crop class or functional diverstiy - ID_KTYP or fd
-    indep_vars = [crop_var, 'fieldSizeM', 'proportAgr', 'SlopeAvrg', 'ElevationA', 'FormerDDRm', '_mean',
-                  "surrf_mean", "surrf_median", "surrf_std", "surrf_min", "surrf_max", "surrf_no_fields"]
+    dep_var = "log_farm_size"
+    crop_var = "temp_div_agg" ## choose between crop class or functional diverstiy - ID_KTYP or fd or temp_div_agg
+    indep_vars = ["inter_lfs_lsm", "inter_lfs_pagr", 'state', 'sdElevatio', crop_var, 'log_soil_quality']
+    # indep_vars = [crop_var, 'fieldSizeM', 'proportAgr', 'SlopeAvrg', 'ElevationA', 'FormerDDRm', '_mean',
+    #               "surrf_mean", "surrf_median", "surrf_std", "surrf_min", "surrf_max", "surrf_no_fields"]
 
     for col in indep_vars:
         sub = iacs.loc[iacs[col].isna()].copy()
@@ -319,15 +340,98 @@ def random_forest_wrapper(iacs_pth, add_vars_pth):
     ## How does the full model compare to a regionalized model?
 
     # ########################################## Final model with random sampling on field IDs #########################
-    # print("FINAL MODEL with random sampling on field IDs")
-    # out_folder = r"Q:\FORLand\Field_farm_size_relationship\figures\rfr_final_model"
+    print("FINAL MODEL with random sampling on field IDs")
+    out_folder = r"Q:\FORLand\Field_farm_size_relationship\figures\rfr_final_model"
+    n_estimators = 1000
+    train_size = 0.1
+    print("n_estimators:", n_estimators, "training size:", train_size)
+    descr = f"_for_bayes_comparison_n{n_estimators}_t{train_size}".replace('.', '')
+
+    ## Exclude unnecessary columns
+    df_data = iacs[[dep_var] + indep_vars].copy()
+    ## Separate dependent and independent variables
+    y = df_data[dep_var]
+    X = df_data.loc[:, df_data.columns != dep_var]
+
+    ## Convert categorical variables into dummy variables
+    X_encoded = pd.get_dummies(
+        data=X,
+        columns=["state", crop_var], drop_first=False)
+
+    df_lst = []
+
+    test_size = 0.1
+    ## Separate test and training data
+    X_train, X_test, y_train, y_test = train_test_split(X_encoded, y, test_size=test_size, train_size=train_size)
+
+    pipe = train_random_forest_regressor(X_train, y_train, n_estimators, scaler=False)
+
+    get_feature_importances(pipe=pipe, X_test=X_test, y_test=y_test, out_folder=out_folder, descr=descr)
+
+    out_pth = f"{out_folder}\scatter_pred_vs_ref_farm_size_{descr}.png"
+    acc_dict = accuracy_assessment(pipe, X_test, y_test, out_pth)
+    acc_dict["n_estimators"] = n_estimators
+    acc_dict["train_size"] = train_size
+    acc_dict["train_num"] = len(y_train)
+    acc_dict["test_num"] = len(y_test)
+
+    df = pd.DataFrame.from_dict(acc_dict, orient="index")
+    df.columns = [descr]
+    df_lst.append(df)
+
+    print("Write accuracy results out.")
+    df_out = pd.concat(df_lst, axis=1)
+    df_out.to_csv(f"{out_folder}\grid_search_field_ids.csv")
+
+    ## Calculate predictions
+    print("Calculate predictions.")
+    predictions = pipe.predict(X_encoded)
+
+    iacs["rfr_pred_log"] = predictions
+    iacs["rfr_pred"] = np.exp(predictions)
+    iacs["errors"] = iacs["farm_size"] - iacs["rfr_pred"]
+    iacs = iacs[["field_id", "farm_size", "log_farm_size", "rfr_pred", "rfr_pred_log", "errors", "geometry"]]
+
+    print("Write result shapefile out.")
+    iacs.to_file(fr"Q:\FORLand\Field_farm_size_relationship\data\vector\rfr_predictions_{descr}.shp")
+
+
+    # ########################################## Model on heaxgons #########################
+    # out_folder = r"Q:\FORLand\Field_farm_size_relationship\figures\rfr_hexagons"
     # n_estimators = 1000
     # train_size = 0.1
+    # test_size = 0.1
+    #
     # print("n_estimators:", n_estimators, "training size:", train_size)
-    # descr = f"_n{n_estimators}_t{train_size}".replace('.', '')
+    # descr = f"_hexagons_n{n_estimators}_t{train_size}".replace('.', '')
+    #
+    # def mode(aggr_series):
+    #     return pd.Series.mode(aggr_series).iloc[0]
+    #
+    # iacs_hexa = iacs.groupby("hexa_id").agg(
+    #     avg_farm_size=pd.NamedAgg("farm_size", "mean"),
+    #     avg_field_size=pd.NamedAgg("fieldSizeM", "mean"),
+    #     sd_field_size=pd.NamedAgg("fieldSizeM", np.std),
+    #     min_field_size=pd.NamedAgg("fieldSizeM", "min"),
+    #     max_field_size=pd.NamedAgg("fieldSizeM", "max"),
+    #     major_crop=pd.NamedAgg("ID_KTYP", mode),
+    #     # major_fd=pd.NamedAgg("fd", mode),
+    #     former_gdr=pd.NamedAgg("FormerDDRm", mode),
+    #     share_agric=pd.NamedAgg("proportAgr", "first"),
+    #     avg_slope=pd.NamedAgg("SlopeAvrg", "mean"),
+    #     avg_elevation=pd.NamedAgg("ElevationA", "mean"),
+    #     avg_rugged=pd.NamedAgg("sdElevatio", "mean"),
+    #     avg_sqr=pd.NamedAgg("_mean", "mean")
+    # ).reset_index()
+    # iacs_hexa.dropna(inplace=True)
+    #
+    # dep_var = "avg_farm_size"
+    # crop_var = "major_crop"
+    # indep_vars = ["avg_field_size", "sd_field_size", "min_field_size", "max_field_size", crop_var, #"former_gdr",
+    #               "share_agric", "avg_slope", "avg_elevation", "avg_rugged", "avg_sqr"]
     #
     # ## Exclude unnecessary columns
-    # df_data = iacs[[dep_var] + indep_vars].copy()
+    # df_data = iacs_hexa[[dep_var] + indep_vars].copy()
     # ## Separate dependent and independent variables
     # y = df_data[dep_var]
     # X = df_data.loc[:, df_data.columns != dep_var]
@@ -335,11 +439,10 @@ def random_forest_wrapper(iacs_pth, add_vars_pth):
     # ## Convert categorical variables into dummy variables
     # X_encoded = pd.get_dummies(
     #     data=X,
-    #     columns=["FormerDDRm", crop_var], drop_first=False)
+    #     columns=[crop_var], drop_first=False) #"former_gdr",
     #
     # df_lst = []
     #
-    # test_size = 0.1
     # ## Separate test and training data
     # X_train, X_test, y_train, y_test = train_test_split(X_encoded, y, test_size=test_size, train_size=train_size)
     #
@@ -362,94 +465,112 @@ def random_forest_wrapper(iacs_pth, add_vars_pth):
     # print("Calculate predictions.")
     # predictions = pipe.predict(X_encoded)
     #
-    # iacs["rfr_pred"] = predictions
-    # iacs["errors"] = iacs["farm_size"] - iacs["rfr_pred"]
-    # iacs = iacs[["field_id", "farm_size", "rfr_pred", "errors", "geometry"]]
-    # iacs.to_file(fr"Q:\FORLand\Field_farm_size_relationship\data\vector\rfr_predictions_{descr}.shp")
+    # iacs_hexa["rfr_pred"] = predictions
+    # iacs_hexa["errors"] = iacs_hexa[dep_var] - iacs_hexa["rfr_pred"]
+    # iacs_hexa = iacs_hexa[["hexa_id", dep_var, "rfr_pred", "errors"]]
+    # hexa_shp = gpd.read_file(r"Q:\FORLand\Field_farm_size_relationship\data\vector\grid\hexagon_grid_ALL_5km_with_values.shp")
+    # hexa_shp = hexa_shp[["hexa_id", "geometry"]].copy()
+    # hexa_shp = pd.merge(hexa_shp, iacs_hexa, how="left", on="hexa_id")
+    # hexa_shp.to_file(fr"Q:\FORLand\Field_farm_size_relationship\data\vector\rfr_predictions_hexa_5km_{descr}.shp")
     #
     # df_out = pd.concat(df_lst, axis=1)
-    # df_out.to_csv(f"{out_folder}\grid_search_field_ids.csv")
+    # df_out.to_csv(f"{out_folder}\grid_search_field_ids{descr}.csv")
 
-    ########################################## Model on heaxgons #########################
-    out_folder = r"Q:\FORLand\Field_farm_size_relationship\figures\rfr_hexagons"
-    n_estimators = 1000
-    train_size = 0.1
-    test_size = 0.1
 
-    print("n_estimators:", n_estimators, "training size:", train_size)
-    descr = f"_hexagons_n{n_estimators}_t{train_size}".replace('.', '')
+def plot_apu(preds, pred_cols, ref_col, apu_plot_pth):
+    """
+    https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2007JD009662
+    The accuracy (A) statistically represents the mean bias of the estimates, μe, versus the truth data, μt,
+    and is computed as:
 
-    def mode(aggr_series):
-        return pd.Series.mode(aggr_series).iloc[0]
+    ref <- X
+    est <- Y
+    res <- est-ref
+    npix <- length(res)
+    nbp <- npix
+    sumres <- sum(res)
+    A <- sumres/nbp
 
-    iacs_hexa = iacs.groupby("hexa_id").agg(
-        avg_farm_size=pd.NamedAgg("farm_size", "mean"),
-        avg_field_size=pd.NamedAgg("fieldSizeM", "mean"),
-        sd_field_size=pd.NamedAgg("fieldSizeM", np.std),
-        min_field_size=pd.NamedAgg("fieldSizeM", "min"),
-        max_field_size=pd.NamedAgg("fieldSizeM", "max"),
-        major_crop=pd.NamedAgg("ID_KTYP", mode),
-        # major_fd=pd.NamedAgg("fd", mode),
-        former_gdr=pd.NamedAgg("FormerDDRm", mode),
-        share_agric=pd.NamedAgg("proportAgr", "first"),
-        avg_slope=pd.NamedAgg("SlopeAvrg", "mean"),
-        avg_elevation=pd.NamedAgg("ElevationA", "mean"),
-        avg_rugged=pd.NamedAgg("sdElevatio", "mean"),
-        avg_sqr=pd.NamedAgg("_mean", "mean")
-    ).reset_index()
-    iacs_hexa.dropna(inplace=True)
+    The precision, P, is representative of the repeatability of the estimate and is computed as
+    the standard deviation of the estimates around the true values corrected for the mean bias (accuracy)
 
-    dep_var = "avg_farm_size"
-    crop_var = "major_crop"
-    indep_vars = ["avg_field_size", "sd_field_size", "min_field_size", "max_field_size", crop_var, #"former_gdr",
-                  "share_agric", "avg_slope", "avg_elevation", "avg_rugged", "avg_sqr"]
+    sumresA_sq <- sum((res-A)*(res-A))
+    P <- sqrt(sumresA_sq/(nbp-1))
 
-    ## Exclude unnecessary columns
-    df_data = iacs_hexa[[dep_var] + indep_vars].copy()
-    ## Separate dependent and independent variables
-    y = df_data[dep_var]
-    X = df_data.loc[:, df_data.columns != dep_var]
+    The uncertainty, U, represents the actual statistical deviation of the estimate from the truth
+    including the mean bias and is computed as:
 
-    ## Convert categorical variables into dummy variables
-    X_encoded = pd.get_dummies(
-        data=X,
-        columns=[crop_var], drop_first=False) #"former_gdr",
+    sumres_sq <- sum(res*res)
+    U <- sqrt(sumres_sq/nbp)
 
-    df_lst = []
+    :return:
+    """
 
-    ## Separate test and training data
-    X_train, X_test, y_train, y_test = train_test_split(X_encoded, y, test_size=test_size, train_size=train_size)
 
-    pipe = train_random_forest_regressor(X_train, y_train, n_estimators)
+    # iacs[["field_id", "farm_size", "log_farm_size", "rfr_pred", "rfr_pred_log", "errors", "geometry"]]
 
-    get_feature_importances(pipe=pipe, X_test=X_test, y_test=y_test, out_folder=out_folder, descr=descr)
+    ## Discretize farm sizes into ventiles
+    # pred["bins"] = pd.cut(pred[ref_col], bins=20) #labels=range(1, 21)
+    preds["bins"] = pd.qcut(preds[ref_col], q=20)  #
 
-    out_pth = f"{out_folder}\scatter_pred_vs_ref_farm_size_{descr}.png"
-    acc_dict = accuracy_assessment(pipe, X_test, y_test, out_pth)
-    acc_dict["n_estimators"] = n_estimators
-    acc_dict["train_size"] = train_size
-    acc_dict["train_num"] = len(y_train)
-    acc_dict["test_num"] = len(y_test)
+    fig, axs = plt.subplots(nrows=len(pred_cols), ncols=1, figsize=plotting_lib.cm2inch(30, 15*len(pred_cols)))
 
-    df = pd.DataFrame.from_dict(acc_dict, orient="index")
-    df.columns = [descr]
-    df_lst.append(df)
+    for i, pred_col in enumerate(pred_cols):
+        res_dict = {"bin": [], "n": [], "a": [], "p": [], "u": []}
+        for bin in preds["bins"].unique():
+            df_sub = preds.loc[preds["bins"] == bin].copy()
+            n = len(df_sub)
+            res = df_sub[pred_col] - df_sub[ref_col]
+            a = np.sum(res)/n
+            p = np.sqrt(np.sum((res-a)*(res-a))/(n-1))
+            u = np.sqrt(np.sum(res*res)/n)
+            res_dict["bin"].append(bin)
+            res_dict["n"].append(n)
+            res_dict["a"].append(a)
+            res_dict["p"].append(p)
+            res_dict["u"].append(u)
+    
+        apu_df = pd.DataFrame.from_dict(res_dict)
+        apu_df.sort_values(by="bin", inplace=True)
+        apu_df.index = range(len(apu_df))
+    
+        n = len(preds)
+        res = preds[pred_col] - preds[ref_col]
+        a = np.sum(res) / n
+        p = np.sqrt(np.sum((res - a) * (res - a)) / (n - 1))
+        u = np.sqrt(np.sum(res * res) / n)
 
-    ## Calculate predictions
-    print("Calculate predictions.")
-    predictions = pipe.predict(X_encoded)
+        if len(pred_cols) == 1:
+            ax = axs
+        else:
+            ax = axs[i]
 
-    iacs_hexa["rfr_pred"] = predictions
-    iacs_hexa["errors"] = iacs_hexa[dep_var] - iacs_hexa["rfr_pred"]
-    iacs_hexa = iacs_hexa[["hexa_id", dep_var, "rfr_pred", "errors"]]
-    hexa_shp = gpd.read_file(r"Q:\FORLand\Field_farm_size_relationship\data\vector\grid\hexagon_grid_ALL_5km_with_values.shp")
-    hexa_shp = hexa_shp[["hexa_id", "geometry"]].copy()
-    hexa_shp = pd.merge(hexa_shp, iacs_hexa, how="left", on="hexa_id")
-    hexa_shp.to_file(fr"Q:\FORLand\Field_farm_size_relationship\data\vector\rfr_predictions_hexa_5km_{descr}.shp")
+        ax.set_title(pred_col)
+    
+        sns.lineplot(data=apu_df["a"], marker='o', sort=False, ax=ax, color="blue")
+        sns.lineplot(data=apu_df["p"], marker='o', sort=False, ax=ax, color="orange")
+        sns.lineplot(data=apu_df["u"], marker='o', sort=False, ax=ax, color="green")
+        legend_elements = [Patch(facecolor="blue", edgecolor=None, label="Accuracy"),
+                           Patch(facecolor="orange", edgecolor=None, label="Precision"),
+                           Patch(facecolor="green", edgecolor=None, label="Uncertainty")]
+        ax.legend(handles=legend_elements, bbox_to_anchor=(.7, .95), ncol=3, title="Legend")
+        ax.set_ylabel('A/P/U')
+        ax.set_xlabel('farm sizes [ha]')
 
-    df_out = pd.concat(df_lst, axis=1)
-    df_out.to_csv(f"{out_folder}\grid_search_field_ids{descr}.csv")
+        text = f"{n} farms\nAccuracy: {round(a,3)}\nPrecision: {round(p,3)}\nUncertainty: {round(u,3)}"
+        ax.annotate(s=text, xy=(.1, .8), xycoords="axes fraction")
+        ax.tick_params(axis='x', labelrotation=45)
 
+        ax2 = ax.twinx()
+        ax2.set_xlabel('Number of farms')
+        sns.barplot(data=apu_df, x='bin', y='n', alpha=0.5, ax=ax2)
+
+        fig.tight_layout()
+
+    plt.savefig(apu_plot_pth)
+    plt.close()
+
+    print("Plotting done!")
 
 ## ------------------------------------------ RUN PROCESSES ---------------------------------------------------#
 def main():
@@ -457,9 +578,44 @@ def main():
     print("start: " + s_time)
     os.chdir(WD)
 
-    random_forest_wrapper(
-        iacs_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\all_predictors_sqr.shp",
-        add_vars_pth=r"Q:\FORLand\Field_farm_size_relationship\data\tables\surrounding_fields_stats_ALL.csv")
+    # random_forest_wrapper(
+    #     iacs_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\all_predictors_sqr.shp",
+    #     add_vars_pth=r"Q:\FORLand\Field_farm_size_relationship\data\tables\surrounding_fields_stats_ALL.csv")
+    #
+    rfr_pred = gpd.read_file(r"Q:\FORLand\Field_farm_size_relationship\data\vector\rfr_predictions__for_bayes_comparison_n1000_t01.shp")
+    bay_pred = gpd.read_file(r"Q:\FORLand\Field_farm_size_relationship\data\predictions_bayes\preds_full_sp.shp")
+
+    preds = pd.merge(rfr_pred[["field_id", "farm_size", "rfr_pred"]],
+                       bay_pred[["field_d", "farm_id", "preds"]], left_on="field_id", right_on="field_d", how="left")
+    preds.dropna(subset=["preds"], inplace=True)
+    preds.dropna(subset=["rfr_pred"], inplace=True)
+    preds.rename(columns={"preds": "bayes_pred"}, inplace=True)
+    # preds.to_csv(r"Q:\FORLand\Field_farm_size_relationship\data\vector\rfr+bayes_predictions.csv", index=False)
+
+    # plot_apu(
+    #     preds=preds,
+    #     pred_cols=["rfr_pred"],
+    #     ref_col="farm_size",
+    #     apu_plot_pth=r"Q:\FORLand\Field_farm_size_relationship\figures\apu_plot_rfr.png")
+    #
+    # plot_apu(
+    #     preds=preds,
+    #     pred_cols=["bayes_pred"],
+    #     ref_col="farm_size",
+    #     apu_plot_pth=r"Q:\FORLand\Field_farm_size_relationship\figures\apu_plot_bayes.png")
+
+    plot_apu(
+        preds=preds,
+        pred_cols=["rfr_pred", "bayes_pred"],
+        ref_col="farm_size",
+        apu_plot_pth=r"Q:\FORLand\Field_farm_size_relationship\figures\apu_plot_rfr+bayes.png")
+
+    ## Bayes predictions
+    # plot_apu(
+    #     pred_pth=r"Q:\FORLand\Field_farm_size_relationship\data\predictions_bayes\preds_full_sp.shp",
+    #     pred_col="preds",
+    #     ref_col="farm_sz",
+    #     apu_plot_pth=r"Q:\FORLand\Field_farm_size_relationship\figures\apu_plot_bayes.png")
 
     e_time = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())
     print("start: " + s_time)

@@ -5,383 +5,413 @@
 #Franziska Frankenfeld
 #----------------------------------------------------------------------------------------------------
 ##import required modules
+import os
 import pandas as pd
-import geopandas as gp
-from osgeo import gdal,osr
+import geopandas as gpd
 import numpy as np
 import rasterio
 from rasterstats import zonal_stats
-from rasterio.mask import mask
-from scipy import stats
-import shapely
-from shapely import wkt
-#----------------------------------------------------------------------------------------------------
-#data input directory
-data_in = "//141.20.140.92/SAN_Projects/FORLand/Field_farm_size_relationship/data/"
-#data output directory
-data_out = "//141.20.140.92/SAN_Projects/FORLand/Field_farm_size_relationship/data/"
+import warnings
+from scipy.sparse import csr_matrix
+from rasterio import features
+from rasterio.io import MemoryFile
+import math
+from rtree import index
+from joblib import Parallel, delayed
+
+# from osgeo import gdal,osr
+# import io
+# import time
+# import matplotlib.pyplot as plt
+# from rasterio.mask import mask
+# from scipy import stats
+# import shapely
+# from shapely import wkt
+
+global iacs
+global rtree_index
 
 #----------------------------------------------------------------------------------------------------
-###VECTOR DATA PROCESSING
-##read vector data
-#invekos
-inv_3035 = gp.read_file(data_in+"vector/IACS/IACS_ALL_2018_NEW_3035.shp")
-inv_3035 = inv_3035.dropna()
-
-#hexagon grid
-hexa_3035 = gp.read_file(data_in+"vector/grid/hexagon_grid_GER_5km_3035.shp")
-
-#data info
-print(hexa_3035[0:10])
-print('-------------')
-print(inv_3035[0:10])
-
-#data info
-print(type(inv_3035)) 
-print(type(hexa_3035))
-print(inv_3035.crs) 
-print(hexa_3035.crs) 
-
-#----------------------------------------------------------------------------------------------------
-#calculate field sizes and hexagon sizes
-
-#calculate field size
-inv_3035["fieldSizeM2"] = inv_3035.area
-#drop old field size column
-inv_3035.drop(["field_size"], axis=1, inplace=True)
-
-#calculate area size per hexagon
-hexa_3035["hexaSizeM2"] = hexa_3035.area
-
-#rename id to hex_id for clarity
-hexa_3035.rename(columns={'id': 'hexa_id'}, inplace=True)
-
-#----------------------------------------------------------------------------------------------------
-###Count number of fields per farm
-
-grouped = inv_3035.groupby('farm_id').size()
-print(grouped)
-
-#convert series to dataframe
-df = grouped.to_frame().reset_index()
-df = df.rename(columns= {0: 'fieldCountPerHexagon'})
-df.index.name = 'index'
-print(df)
-
-#merge to invekos dataframe
-inv_3035 = pd.merge(inv_3035, df[["farm_id", "fieldCountPerHexagon"]], how="left", on="farm_id")
-print(inv_3035)
+WD = "//141.20.140.92/SAN_Projects/FORLand/Field_farm_size_relationship/data/"
+os.chdir(WD)
 
 #----------------------------------------------------------------------------------------------------
 
-###assign if former East or West Germany member
+def compute_M(data):
+    cols = np.arange(data.size)
+    return csr_matrix((cols, (data.ravel(), cols)),
+                      shape=(data.max() + 1, data.size))
 
-##get info on existing laender-codes in data by examining field_id
-#put field_id column into pandas series format
-series = inv_3035['field_id'].squeeze()
-#use split function of pandas series to split string of field_id right after the laender-code letters in the beginning
-new = series.str.split(pat="_", n=1, expand=True)
-#print unique laender-codes in data
-print(new[0].unique())
 
-#add new column with value based on laender code, BB Brandeburg, TH Thueringen, LS Lower Saxony, BV Bavaria, SA Sachsen Anhalt, 
-#create function
-def f(row):
-    if row['field_id'].startswith("BB") or row['field_id'].startswith("TH") or row['field_id'].startswith("SA"):
-        val = 1
-    elif row['field_id'].startswith("LS") or row['field_id'].startswith("BV"):
-        val = 0
+def get_indices_sparse(data):
+    M = compute_M(data)
+    return [np.unravel_index(row.data, data.shape) for row in M]
+
+
+def zonal_stats_alt(gpd, rst_fn, stats=["mean"]):
+    rst = rasterio.open(rst_fn)
+    meta = rst.meta.copy()
+    meta.update(compress='lzw')
+    # gpd.geometry = gpd.buffer(1000)
+    # Create an in-memory file-like object
+    memfile = MemoryFile()
+
+    with memfile.open(driver='GTiff', width=meta['width'], height=meta['height'], count=1, dtype=meta['dtype'],
+                      crs=meta['crs'], transform=meta['transform'], compress='lzw') as dataset:
+        out_arr = dataset.read(1)
+
+        # Create a generator of geom, value pairs to use in rasterizing
+        # index + 1 because we fill with zeros -> zero is the no data value; float not possible because int needed for
+        # sparse indices
+        shapes = ((geom, value) for geom, value in zip(gpd.geometry, gpd.index+1))
+
+        burned = features.rasterize(shapes=shapes, fill=0, out=out_arr, transform=dataset.transform, all_touched=True)
+        dataset.write_band(1, burned)
+        # Read the modified data from the in-memory dataset
+        arr = dataset.read(1)
+
+    sparse_idx = get_indices_sparse(arr.astype(int))
+    with rasterio.open("raster/Slope_3035.tif") as src:
+        array = src.read(1)
+        ndval = src.nodatavals[0]
+        print('NDVAL: ', ndval)
+        array[array == ndval] = np.nan  # set no data values to appropriate na-value format
+
+    mean_values = []
+    std_values = []
+    for id, indices_field in enumerate(sparse_idx):
+        # skip zero because no data value
+        if id == 0:
+            continue
+        else:
+            std_values.append(np.nanstd(array[indices_field]))
+            mean_values.append(np.nanmean(array[indices_field]))
+
+    gpd['mean'] = mean_values
+    gpd['std'] = std_values
+    return gpd
+
+
+if __name__ == '__main__':
+    # ----------------------------------------------------------------------------------------------------
+    ###VECTOR DATA PROCESSING
+    ##read vector data
+    # invekos
+    iacs = gpd.read_file("vector/IACS/IACS_ALL_2018_with_grassland_recl_3035.shp")
+    iacs.dropna(inplace=True)
+
+    # hexagon grid
+    hexa = gpd.read_file("vector/grid/hexagon_grid_GER_5km_3035.shp")
+
+    # data info
+    print("CRS IACS:", iacs.crs)
+    print("CRS Hexagons:", hexa.crs)
+
+    # ----------------------------------------------------------------------------------------------------
+    # calculate field sizes and hexagon sizes
+
+    # calculate field size
+    iacs["fieldSizeM2"] = iacs.area
+    # iacs.drop(["field_size"], axis=1, inplace=True)
+
+    # calculate area size per hexagon
+    hexa["hexaSizeM2"] = hexa.area
+
+    # rename id to hex_id for clarity
+    hexa.rename(columns={'id': 'hexa_id'}, inplace=True)
+
+    # ----------------------------------------------------------------------------------------------------
+    ###Count number of fields per farm
+    df = iacs.groupby(['farm_id']).agg(
+        fieldCount=pd.NamedAgg("field_id", "count")
+    ).reset_index()
+
+    # merge to invekos dataframe
+    iacs = pd.merge(iacs, df, how="left", on="farm_id")
+
+    # ----------------------------------------------------------------------------------------------------
+    ###assign if former East or West Germany member
+
+    iacs["federal_state"] = iacs["field_id"].apply(lambda x: x.split("_")[0])
+    iacs['FormerDDRmember'] = 0
+    iacs.loc[iacs["federal_state"].isin(["BB", "SA", "TH"]), "FormerDDRmember"] = 1
+
+    print("Values for FormerDDRmember:", iacs.FormerDDRmember.unique())
+
+    # ----------------------------------------------------------------------------------------------------
+
+    # calculate centroids of fields
+    iacs["centroids"] = iacs["geometry"].centroid
+    centroids = iacs[["field_id", "centroids"]].copy()
+    centroids.rename(columns={"centroids": "geometry"}, inplace=True)
+    centroids = centroids.set_geometry("geometry")
+    iacs.drop(columns=["centroids"], inplace=True)
+
+    ## Create a centroids layer and add the hex id to the centroids
+    centroids = gpd.GeoDataFrame(centroids, crs=3035)
+    centroids = gpd.sjoin(centroids, hexa, how="left", op="intersects")
+
+    # add centroids info to invekos dataframe
+    # check if same length
+
+    if len(iacs) == len(centroids):
+        print("Merging IACS with centroids and hexagon information.")
+        iacs = pd.merge(iacs, centroids[["field_id", "hexa_id"]], how="left", on="field_id")
     else:
-        val = 999
-    return val
-
-#apply function
-inv_3035["FormerDDRmember"] = inv_3035.apply(f, axis=1)
-print(inv_3035)
-print(inv_3035.FormerDDRmember.unique())
-len(inv_3035[inv_3035['FormerDDRmember']==1])
-len(inv_3035[inv_3035['FormerDDRmember']==0])
-len(inv_3035[inv_3035['FormerDDRmember']==999]) 
-
-#----------------------------------------------------------------------------------------------------
-
-#calculate centroids of fields
-
-#do copy of invekos data to avoid problems with changing of datatypes and incompatibility
-inv_c = inv_3035.copy()
-
-#approach by Clemens to get centroids
-inv_c["centroids"] = inv_c["geometry"].centroid
-centroids = inv_c[["field_id", "centroids"]].copy()
-centroids.rename(columns={"centroids": "geometry"}, inplace=True)
-#drop centroids in invekos dataframe
-inv_c.drop(["centroids"],axis=1,inplace=True)
-
-## Create a centroids layer and add the hex id to the centroids
-centroids = gp.GeoDataFrame(centroids, crs=3035)
-centroids = gp.sjoin(centroids, hexa_3035, how="left", op="intersects")
-
-
-#add centroids info to invekos dataframe
-#check if same length
-print(len(inv_3035))
-print(len(centroids))
-                          
-##Add hexagon id and size to iacs data by joining the centroids values
-inv_3035 = pd.merge(inv_3035, centroids[["field_id", "hexa_id", "hexaSizeM2"]], how="left", on="field_id")
-print(inv_3035)
-
-#----------------------------------------------------------------------------------------------------
-
-##get proportion of agricultural areas per hexagon
-
-#group by hexa id and sum fieldsize
-grouped = inv_3035.groupby(['hexa_id', 'hexaSizeM2'])['fieldSizeM2'].sum().reset_index()
-print(grouped)
-
-#divide by total hexa size to get proportion
-grouped['proportAgri'] = (grouped['fieldSizeM2']/grouped['hexaSizeM2']) 
-print(grouped)
-
-#check if numbers between 0 and 1 only
-print(grouped[grouped['proportAgri'] < 0 ])
-print(grouped[grouped['proportAgri'] > 1])
-
-#add proportion column to invekos df
-inv_3035 = pd.merge(inv_3035, grouped[[ "hexa_id", "proportAgri"]], how="left", on="hexa_id")
-print(inv_3035)
-
-#----------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------
-
-###RASTER DATA PROCESSING
-
-#calculate average slope per field
-
-with rasterio.open(data_in+"raster/Slope_3035.tif") as src:
-    affine = src.transform #using affine transformation matrix
-    array = src.read(1)
-    print(src.nodatavals) #print no data value
-    print(array)
-    ndval = src.nodatavals[0]
-    #array = array.astype('float64')
-    array[array==ndval] = np.nan #set no data values to appropriate na-value format
-    print(array)
-    print(np.isnan(array).sum()) #127 487 852
-    print(array.size) #912 145 488 13% of all Pixels are na
-    
-    df_zonal_stats = pd.DataFrame(zonal_stats(inv_3035, array, all_touched = True, nodata=np.nan, affine=affine, stats=["mean"]))
-    print(df_zonal_stats)
-    print(df_zonal_stats['mean'].isnull().sum()) #8112
-    print(len(df_zonal_stats)) #1624222
-    
-
-#adding statistics back to original GeoDataFrame
-slope = pd.concat([inv_3035, df_zonal_stats], axis=1)
-
-#rename columns
-slope.rename(columns={'mean': 'SlopeAvrg'}, inplace=True)
-print(slope)
-
-#write shapefile
-slope.to_file(data_in+"test_run2/slopeAvrg", driver="ESRI Shapefile")
-
-#----------------------------------------------------------------------------------------------------
-
-#calculate average elevation per field and sd elevation per hexagon
-
-with rasterio.open(data_in+"raster/Dem_3035.tif") as src:
-    affine = src.transform #using affine transformation matrix
-    array = src.read(1)
-    print(src.nodatavals) #print no data value
-    print(array)
-    ndval = src.nodatavals[0]
-    #array = array.astype('float64') 
-    array[array==ndval] = np.nan #set no data values to appropriate na-value format
-    print(array)  
-    
-    df_zonal_stats = pd.DataFrame(zonal_stats(inv_3035, array, all_touched = True, nodata=np.nan, affine=affine, stats=["mean"]))
-    print(df_zonal_stats)
-    
-    df_zonal_stats2 = pd.DataFrame(zonal_stats(hexa_3035, array, all_touched = True, nodata=np.nan, affine=affine,   stats=["std"]))
-    print(df_zonal_stats2)
-
-    
-    
-#adding field statistics back to original GeoDataFrame
-dem = pd.concat([inv_3035, df_zonal_stats], axis=1)
-
-#rename columns
-dem.rename(columns={'mean': 'ElevationA'}, inplace=True)
-print(dem)
-
-#write shapefile
-dem.to_file(data_in+"test_run2/elevationAvrg", driver="ESRI Shapefile")
-
-
-
-#adding hexagon statistics back to original GeoDataFrame
-dem2 = pd.concat([hexa_3035, df_zonal_stats2], axis=1)
-
-#rename columns
-dem2.rename(columns={'std': 'sdElevatio'}, inplace=True)
-print(dem2)
-#use this in the end and merge sdElevation to the complete dataframe using the hexa-ID column
-#----------------------------------------------------------------------------------------------------
-
-#determine most common crop sequence type per field
-with rasterio.open(data_in+"raster/CST/all_2012-2018_CropSeqType_3035.tif") as src:
-    affine = src.transform #using affine transformation matrix
-    array = src.read(1)
-    print(array)
-    print(src.nodatavals) #print no data value
-    
-    #ndval = src.nodatavals[0]
-    #array = array.astype('float')
-    #array[array==ndval] = np.nan #set no data values to appropriate na-value format
-    #print(array)
-    df_zonal_stats = pd.DataFrame(zonal_stats(inv_3035, array,nodata=255.0, all_touched = True, affine=affine, stats=["majority"]))
-    print(df_zonal_stats)
-
-# adding statistics back to original GeoDataFrame
-cst = pd.concat([inv_3035, df_zonal_stats], axis=1)
-
-#rename columns
-cst.rename(columns={'majority': 'CstMaj'}, inplace=True)
-print(cst)
-
-#write shapefile
-cst.to_file(data_in+"test_run2/CstMaj", driver="ESRI Shapefile")
-
-# ----------------------------------------------------------------------------------------------------
-
-#calculate average field usage capacity (nutzbare Feldkapazitaet NFKW)
-
-with rasterio.open(data_in+"raster/NFKWe1000_250_3035.tif") as src:
-    affine = src.transform #using affine transformation matrix
-    array = src.read(1)
-    print(src.width)
-    print(src.height) #Total 8 665 984 pixels same as in Qgis
-    
-    print(src.nodatavals) #print no data value -3.4028230607370965e+38 #passt das mit float64?
-    #print(array)
-    
-    print(np.isnan(array).sum())#0, weil noch no data value -3.4028...
-    ndval = src.nodatavals[0]
-    array = array.astype('float64') 
-    array[array==ndval] = np.nan #set no data values to appropriate na-value format
-    print(np.isnan(array).sum()) #4 046 041 same as in Qgis
-    print(array.size) #8 665 984, 46% of all pixels are na
-    print(array)  
-    
-    df_zonal_stats = pd.DataFrame(zonal_stats(inv_3035, array, affine=affine, nodata=np.nan, all_touched = True, stats=["mean"]))
-    print(df_zonal_stats)
-    print(df_zonal_stats['mean'].isnull().sum()) #1 020  840
-    print(len(df_zonal_stats)) #1 624 222
-
-#adding statistics back to original GeoDataFrame
-nfk = pd.concat([inv_3035, df_zonal_stats], axis=1)
-
-#rename columns
-nfk.rename(columns={'mean': 'NfkAvrg'}, inplace=True)
-print(nfk)
-
-#write shapefile
-nfk.to_file(data_in+"test_run2/NfkAvrg", driver="ESRI Shapefile")
-
-#----------------------------------------------------------------------------------------------------
-
-#calculate average soil water (Austausch Bodenwasser AHAACGL)
-
-with rasterio.open(data_in+"raster/AHACGL1000_250_3035.tif") as src:
-    affine = src.transform #using affine transformation matrix
-    array = src.read(1)
-    print(src.nodatavals) #print no data value
-    print(array)
-    ndval = src.nodatavals[0]
-    #array = array.astype('float64') 
-    array[array==ndval] = np.nan #set no data values to appropriate na-value format
-    print(array)  
-    
-    df_zonal_stats = pd.DataFrame(zonal_stats(inv_3035, array, affine=affine, all_touched = True, nodata=np.nan, stats=["mean"]))
-    print(df_zonal_stats)
-
-#adding statistics back to original GeoDataFrame
-aha = pd.concat([inv_3035, df_zonal_stats], axis=1)
-
-#rename columns
-aha.rename(columns={'mean': 'AhaacglAvr'}, inplace=True)
-print(aha)
-
-#write shapefile
-aha.to_file(data_in+"test_run2/AhaacglAvrg", driver="ESRI Shapefile")
-
-#----------------------------------------------------------------------------------------------------
-#----------------------------------------------------------------------------------------------------
-
-#in preparation for the final merge, we first have to get rid of the NAs in field_id, which were produced during the last steps when calculating the raster statistics per field (raster values where were no field geometries were also put in the df and therefore there are a lot of NA values in field_id)
-
-
-#print length of dataframes
-#print(len(slope))
-
-#check for nas
-#print(slope[slope.duplicated(subset=['field_id'],keep=False)]) #some observations have NA in field id and only info from raster. We can drop them because they are not part of invekos
-
-#drop nas
-slope_new = slope.dropna(subset = ['field_id'])
-print(len(slope_new))
-
-dem_new = dem.dropna(subset = ['field_id'])
-print(len(dem_new))
-dem2_new = dem2.dropna(subset = ['hexa_id'])
-print(len(dem2_new))
-
-cst_new = cst.dropna(subset = ['field_id'])
-print(len(cst_new))
-
-nfk_new = nfk.dropna(subset = ['field_id'])
-print(len(nfk_new))
-
-aha_new = aha.dropna(subset = ['field_id'])
-print(len(aha_new))
-
-#merge
-merge1 = pd.merge(slope_new, cst_new[["field_id", "CstMaj"]], how="left", on="field_id", validate ="one_to_one")
-print(len(merge1))
-
-merge2 = pd.merge(nfk_new, aha_new[["field_id", "AhaacglAvr"]], how="left", on="field_id", validate ="one_to_one")
-
-merge22 = pd.merge(merge2, dem_new[["field_id", "ElevationA", "sdElevatio"]], how="left", on="field_id", validate ="one_to_one")
-print(len(merge22))
-
-#merge final
-final_merge = pd.merge(merge1, merge22[["field_id", "NfkAvrg", "AhaacglAvr","ElevationA", "sdElevatio"]], how="left", on="field_id", validate ="one_to_one")
-print(len(final_merge))
-print(final_merge)
-
-#merge dem via hexa_id
-final_merge = pd.merge(final_merge, dem2[[ "hexa_id", "sdElevatio"]], how="left", on="hexa_id")
-print(final_merge)
-
-#move geometry column to the end of df
-#column_to_move = final_merge.pop("geometry")
-# insert column with insert(location, column_name, column_value)
-#final_merge.insert(11, "geometry", column_to_move)
-#print(final_merge)
-
-#write shapefile
-final_merge.to_file(data_in+"test_run2/all_predictors", driver="ESRI Shapefile")
-
-#----------------------------------------------------------------------------------------------------
-
-#do 10% subset of whole dataframe
-inv_10perc = inv_compl.sample(frac= 0.1)
-
-#write this subset to csv
-inv_10perc.to_csv(data_out+"test_run2/10perc_final_inv.csv", index=False)
-
-#write complete dataset to shapefile
-inv_compl.to_file(data_out+"test_run2/final_inv_compl", driver="ESRI Shapefile")
-
-
+        warnings.warn("IACS and centroids don't have the same length!", len(iacs), len(centroids))
+
+    # ----------------------------------------------------------------------------------------------------
+    def process_chunk(chunk, iacs):
+        ## temp:
+        # chunk = iacs.index[0:0 + 10]
+        # index = chunk[1]
+        ## creat spatial index
+        spatial_index = iacs.copy().sindex
+        intersected_list = []
+        ## loop over rows
+        for index in chunk:
+            row = iacs.iloc[index]
+            geom = row.geometry.centroid.buffer(1000)
+            possible_matches_index = list(spatial_index.intersection(geom.bounds))
+            possible_matches = iacs.iloc[possible_matches_index].copy()
+
+            inters_df = iacs.loc[iacs.index == index].copy()
+            inters_df.geometry = inters_df.geometry.centroid.buffer(1000)
+            intersection = gpd.overlay(possible_matches, inters_df, how="intersection", keep_geom_type=False, make_valid=True)
+            agri_area_in_buffer = intersection.area.sum()
+
+            ## temp:
+            # possible_matches.to_file(r"Q:\FORLand\Field_farm_size_relationship\temp\possible_matches.shp")
+            # inters_df.to_file(r"Q:\FORLand\Field_farm_size_relationship\temp\buffer.shp")
+            # intersection.to_file(r"Q:\FORLand\Field_farm_size_relationship\temp\intersection.shp")
+
+            intersected_list.append((index, agri_area_in_buffer))
+        return intersected_list
+
+    num_processes = 8
+    chunk_size = len(iacs) // num_processes
+    chunks = [iacs.index[i:i + chunk_size] for i in range(0, len(iacs), chunk_size)]
+    results = Parallel(n_jobs=num_processes)(
+        delayed(process_chunk)(chunk, iacs)
+        for chunk in chunks)
+    df_lsts = [pd.DataFrame(sublist, columns=["index", "sumAgr1000"]) for sublist in results]
+    intersected_combined = pd.concat(df_lsts)
+    intersected_combined.index = intersected_combined["index"]
+    intersected_combined.drop(columns="index", inplace=True)
+    iacs = pd.merge(iacs, intersected_combined, "left", left_index=True, right_index=True)
+    iacs["propAg1000"] = round(iacs["sumAgr1000"] / (math.pi * 1000 * 1000), 2)
+
+    iacs[["field_id", "propAg1000", "sumAgr1000"]].to_csv(r"test_run2\SumAgr\SumAgr_w_grassland.csv", index=False)
+
+    #----------------------------------------------------------------------------------------------------
+    #----------------------------------------------------------------------------------------------------
+
+    ###RASTER DATA PROCESSING
+    #----------------------------------------------------------------------------------------------------
+    #calculate average elevation per field
+    with rasterio.open("raster/Dem_3035.tif") as src:
+        affine = src.transform #using affine transformation matrix
+        array = src.read(1)
+        ndval = src.nodatavals[0]
+        array[array == ndval] = np.nan #set no data values to appropriate na-value format
+        zonal_stats_fields = pd.DataFrame(zonal_stats(iacs, array, all_touched=True, nodata=np.nan, affine=affine, stats=["mean", "std"]))
+
+    zonal_stats_fields.rename(columns={'mean': 'ElevationA', 'std': 'sdElev0'}, inplace=True)
+    iacs = pd.concat([iacs, zonal_stats_fields], axis=1)
+    iacs[["field_id", "ElevationA", "sdElev0"]].to_csv(r"test_run2\elevationAvrg\elevationAvrg_w_grassland.csv", index=False)
+
+    #adding field statistics back to original GeoDataFrame
+    # dem = pd.concat([iacs, zonal_stats_fields], axis=1)
+    # dem.rename(columns={'mean': 'ElevationA'}, inplace=True)
+    # dem.rename(columns={'std': 'sdElev0'}, inplace=True)
+    # dem.to_file("test_run2/elevationAvrg", driver="ESRI Shapefile")
+
+    # ----------------------------------------------------------------------------------------------------
+    # calculate average TRI per field
+    with rasterio.open("raster/DEM_TRI_GER_25m.tif") as src:
+        affine = src.transform  # using affine transformation matrix
+        array = src.read(1)
+        ndval = src.nodatavals[0]
+        array[array == ndval] = np.nan  # set no data values to appropriate na-value format
+        zonal_stats_fields = pd.DataFrame(
+            zonal_stats(iacs, array, all_touched=True, nodata=np.nan, affine=affine, stats=["mean"]))
+        zonal_stats_buff500 = pd.DataFrame(
+            zonal_stats(iacs.geometry.centroid.buffer(500), array, all_touched=True, nodata=np.nan, affine=affine,
+                        stats=["mean"]))
+        zonal_stats_buff1000 = pd.DataFrame(
+            zonal_stats(iacs.geometry.centroid.buffer(1000), array, all_touched=True, nodata=np.nan, affine=affine,
+                        stats=["mean"]))
+
+    ## temporary:
+    # iacs = inv_3035.copy()
+    # del inv_3035
+    # iacs.drop(columns=["hexaSizeM2", "avgTRI1000"], inplace=True)
+    # iacs = pd.concat([iacs, zonal_stats_buff1000], axis=1)
+    # iacs.rename(columns={"NumFrmFlds": "fieldCount", "mean": "avgTRI1000"}, inplace=True)
+
+    zonal_stats_fields.rename(columns={'mean': 'avgTRI0'}, inplace=True)
+    zonal_stats_buff500.rename(columns={'mean': 'avgTRI500'}, inplace=True)
+    zonal_stats_buff1000.rename(columns={'mean': 'avgTRI1000'}, inplace=True)
+    zonal_stats_fields = pd.concat([zonal_stats_fields, zonal_stats_buff500, zonal_stats_buff1000], axis=1)
+    iacs = pd.concat([iacs, zonal_stats_fields], axis=1)
+    iacs[["field_id", "avgTRI0", "avgTRI500", "avgTRI1000"]].to_csv(r"test_run2\TRI\TRI_w_grassland.csv", index=False)
+
+    # adding field statistics back to original GeoDataFrame
+    # tri = pd.concat([iacs, zonal_stats_fields, zonal_stats_buff500, zonal_stats_buff1000], axis=1)
+    # tri.to_file("test_run2/TRIaverage", driver="ESRI Shapefile")
+
+    # ----------------------------------------------------------------------------------------------------
+    # calculate SQR
+    with rasterio.open("raster/sqr1000_250_v10_3035.tif") as src:
+        affine = src.transform  # using affine transformation matrix
+        array = src.read(1)
+        ndval = src.nodatavals[0]
+        array = array.astype('float64')
+        array[array == ndval] = np.nan  # set no data values to appropriate na-value format
+        zonal_stats_fields = pd.DataFrame(
+            zonal_stats(iacs, array, affine=affine, nodata=np.nan, all_touched=True, stats=["mean"]))
+
+    zonal_stats_fields.rename(columns={'mean': 'SQRAvrg'}, inplace=True)
+    zonal_stats_fields.to_csv(r"test_run2\SQRAvrg\SQRAvrg_w_grassland.csv", index=False)
+    iacs = pd.concat([iacs, zonal_stats_fields], axis=1)
+    iacs[["field_id", "SQRAvrg"]].to_csv(r"test_run2\SQRAvrg\SQRAvrg_w_grassland.csv", index=False)
+
+    # ----------------------------------------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------------------------
+    # OUTPUT
+    # write shapefile
+    iacs.to_file("test_run2/all_predictors_w_grassland", driver="ESRI Shapefile")
+
+    # adding statistics back to original GeoDataFrame
+    # sqr = pd.concat([iacs, zonal_stats_fields], axis=1)
+    # sqr.rename(columns={'mean': 'SQRAvrg'}, inplace=True)
+    # sqr.to_file("test_run2/SQRAvrg", driver="ESRI Shapefile")
+
+    # ----------------------------------------------------------------------------------------------------
+    # calculate average slope per field
+    # with rasterio.open("raster/Slope_3035.tif") as src:
+    #     affine = src.transform #using affine transformation matrix
+    #     array = src.read(1)
+    #     ndval = src.nodatavals[0]
+    #     #array = array.astype('float64')
+    #     array[array==ndval] = np.nan #set no data values to appropriate na-value format
+    #     zonal_stats_fields= pd.DataFrame(zonal_stats(iacs, array, all_touched = True, nodata=np.nan, affine=affine, stats=["mean"]))
+    #
+    # #slope = zonal_stats_alt(iacs, data_in+"raster/Slope_3035.tif")
+    #
+    # #adding statistics back to original GeoDataFrame
+    # slope = pd.concat([iacs, df_zonal_stats], axis=1)
+    #
+    # #rename columns
+    # slope.rename(columns={'mean': 'SlopeAvrg'}, inplace=True)
+    #
+    # #write shapefile
+    # slope.to_file("test_run2/slopeAvrg", driver="ESRI Shapefile")
+
+    # ----------------------------------------------------------------------------------------------------
+    # determine most common crop sequence type per field
+    # with rasterio.open("raster/CST/all_2012-2018_CropSeqType_3035.tif") as src:
+    #     affine = src.transform #using affine transformation matrix
+    #     array = src.read(1)
+    #
+    #     #ndval = src.nodatavals[0]
+    #     #array = array.astype('float')
+    #     #array[array==ndval] = np.nan #set no data values to appropriate na-value format
+    #     zonal_stats_fields= pd.DataFrame(zonal_stats(iacs, array,nodata=255.0, all_touched=True, affine=affine, stats=["majority"]))
+    #
+    # # adding statistics back to original GeoDataFrame
+    # cst = pd.concat([iacs, df_zonal_stats], axis=1)
+    #
+    # #rename columns
+    # cst.rename(columns={'majority': 'CstMaj'}, inplace=True)
+    #
+    # #write shapefile
+    # cst.to_file("test_run2/CstMaj", driver="ESRI Shapefile")
+
+    # ----------------------------------------------------------------------------------------------------
+    # calculate average field usage capacity (nutzbare Feldkapazitaet NFKW)
+    # with rasterio.open("raster/NFKWe1000_250_3035.tif") as src:
+    #     affine = src.transform #using affine transformation matrix
+    #     array = src.read(1)
+    #     ndval = src.nodatavals[0]
+    #     array = array.astype('float64')
+    #     array[array==ndval] = np.nan #set no data values to appropriate na-value format
+    #     zonal_stats_fields= pd.DataFrame(zonal_stats(iacs, array, affine=affine, nodata=np.nan, all_touched = True, stats=["mean"]))
+    #
+    # #adding statistics back to original GeoDataFrame
+    # nfk = pd.concat([iacs, df_zonal_stats], axis=1)
+
+    # #rename columns
+    # nfk.rename(columns={'mean': 'NfkAvrg'}, inplace=True)
+    #
+    # #write shapefile
+    # nfk.to_file("test_run2/NfkAvrg", driver="ESRI Shapefile")
+
+    # ----------------------------------------------------------------------------------------------------
+    #calculate average soil water (Austausch Bodenwasser AHAACGL)
+    # with rasterio.open("raster/AHACGL1000_250_3035.tif") as src:
+    #     affine = src.transform #using affine transformation matrix
+    #     array = src.read(1)
+    #     ndval = src.nodatavals[0]
+    #     #array = array.astype('float64')
+    #     array[array==ndval] = np.nan #set no data values to appropriate na-value format
+    #
+    #     zonal_stats_fields= pd.DataFrame(zonal_stats(iacs, array, affine=affine, all_touched = True, nodata=np.nan, stats=["mean"]))
+    #
+    # #adding statistics back to original GeoDataFrame
+    # aha = pd.concat([iacs, df_zonal_stats], axis=1)
+    #
+    # #rename columns
+    # aha.rename(columns={'mean': 'AhaacglAvr'}, inplace=True)
+    #
+    # #write shapefile
+    # aha.to_file("test_run2/AhaacglAvrg", driver="ESRI Shapefile")
+    #----------------------------------------------------------------------------------------------------
+    #----------------------------------------------------------------------------------------------------
+
+    #in preparation for the final merge, we first have to get rid of the NAs in field_id, which were produced during the last steps when calculating the raster statistics per field (raster values where were no field geometries were also put in the df and therefore there are a lot of NA values in field_id)
+
+    #check for nas
+
+    #drop nas
+    # dem_new = dem.dropna(subset=['field_id'])
+    # sqr_new = sqr.dropna(subset=['field_id'])
+
+    # slope_new = slope.dropna(subset = ['field_id'])
+    # cst_new = cst.dropna(subset = ['field_id'])
+    # nfk_new = nfk.dropna(subset = ['field_id'])
+    # aha_new = aha.dropna(subset = ['field_id'])
+
+    #merge
+    # merge1 = pd.merge(slope_new, cst_new[["field_id", "CstMaj"]], how="left", on="field_id", validate ="one_to_one")
+    # merge2 = pd.merge(nfk_new, aha_new[["field_id", "AhaacglAvr"]], how="left", on="field_id", validate ="one_to_one")
+    # merge22 = pd.merge(merge2, dem_new[["field_id", "ElevationA", "sdElev0"]], how="left", on="field_id", validate ="one_to_one")
+    # merge33 = pd.merge(merge22, sqr_new[["field_id", "SQRAvrg"]], how="left", on="field_id", validate ="one_to_one")
+    # final_merge = pd.merge(merge1, merge33[["field_id", "NfkAvrg", "AhaacglAvr","ElevationA", "SQRAvrg", "sdElev0"]], how="left", on="field_id", validate ="one_to_one")
+    # final_merge = pd.merge(final_merge, dem2[[ "field_id", "sdElev500"]], how="left", on="field_id")
+    # final_merge_2 = pd.merge(final_merge, dem3[[ "field_id", "sdElev1000"]], how="left", on="field_id")
+
+    # merge = pd.merge(sqr_new[["field_id", "SQRAvrg"]], dem_new[["field_id", "ElevationA", "sdElev0"]], how="left", on="field_id", validate ="one_to_one")
+    # final_merge = pd.merge(final_merge, dem2[["hexa_id", "sdElevatio"]], how="left", on="hexa_id")
+
+    #move geometry column to the end of df
+    #column_to_move = final_merge.pop("geometry")
+    # insert column with insert(location, column_name, column_value)
+    #final_merge.insert(11, "geometry", column_to_move)
+    #print(final_merge)
+
+    #write shapefile
+    # iacs.to_file("test_run2/all_predictors", driver="ESRI Shapefile")
+
+    #----------------------------------------------------------------------------------------------------
+
+    # #do 10% subset of whole dataframe
+    # inv_10perc = final_merge.sample(frac= 0.1)
+    #
+    # #write this subset to csv
+    # inv_10perc.to_csv("test_run2/10perc_final_inv.csv", index=False)
+    #
+    # #write complete dataset to shapefile
+    # final_merge.to_file("test_run2/final_inv_compl", driver="ESRI Shapefile")
+    #
+    #
