@@ -1,4 +1,4 @@
-# Authors: Clemens Jänicke
+# Authors:
 # github Repo: https://github.com/clejae
 
 ## Plots mean field sizes vs farm sizes per federal state.

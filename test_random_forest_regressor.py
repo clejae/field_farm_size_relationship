@@ -1,4 +1,4 @@
-## Authors: Clemens Jänicke
+## Authors: 
 ## github Repo: https://github.com/clejae
 
 ## Calculates linear regressions to explain farm sizes with field sizes in hexagon grids with varying sizes from IACS data.

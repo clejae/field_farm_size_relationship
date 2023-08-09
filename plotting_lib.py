@@ -1,4 +1,4 @@
-## Authors: Clemens Jänicke
+## Authors:
 ## github Repo: https://github.com/clejae
 
 def plot_map(shp, out_pth, col, vmin=None, vmax=None, shp2_pth=None, highlight_extremes=False):
