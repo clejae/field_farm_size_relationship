@@ -92,7 +92,7 @@ def zonal_stats_alt(gpd, rst_fn, stats=["mean"]):
     return gpd
 
 
-if __name__ == '__main__':
+def prepare_explanatory_variables():
     # ----------------------------------------------------------------------------------------------------
     ###VECTOR DATA PROCESSING
     ##read vector data
@@ -415,3 +415,30 @@ if __name__ == '__main__':
     # final_merge.to_file("test_run2/final_inv_compl", driver="ESRI Shapefile")
     #
     #
+
+
+def merge_surr_fields_with_other_variables(iacs_pth, surrf_pth, out_pth):
+    iacs = gpd.read_file(iacs_pth)
+    surr = pd.read_csv(surrf_pth)
+    for col in surr.columns:
+        surr.loc[surr[col].isna(), col] = 0
+    print(len(surr), len(surr.loc[surr.isnull().any(axis=1)]))
+    iacs = pd.merge(iacs, surr, "left", "field_id")
+    for col in surr.columns:
+        iacs.loc[iacs[col].isna(), col] = 0
+
+    # iacs.to_file(out_pth)
+    iacs.drop(columns="geometry", inplace=True)
+    iacs.to_csv(out_pth[:-3] + "csv", index=False)
+
+
+if __name__ == '__main__':
+
+    # prepare_explanatory_variables()
+
+    merge_surr_fields_with_other_variables(
+        iacs_pth=r"test_run2/all_predictors_w_grassland.shp",
+        surrf_pth=r"tables/surrounding_fields_mean_sizes_ALL_.csv",
+        out_pth=r"test_run2/all_predictors_w_grassland_w_additional_surrf.csv"
+    )
+

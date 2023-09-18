@@ -7,13 +7,12 @@
 import time
 import os
 import geopandas as gpd
+import pandas as pd
 
 from prop_match_functions import *
 
 ## ------------------------------------------ USER INPUT ------------------------------------------------------#
 WD = r"Q:\FORLand\Field_farm_size_relationship"
-IACS_PTH = r"data\test_run2\all_predictors\all_predictors.shp"
-SAMPLE_PTH = r"data\vector\final\matched_sample-v2.shp"
 
 ## ------------------------------------------ DEFINE FUNCTIONS ------------------------------------------------#
 
@@ -79,19 +78,47 @@ def main():
     print("start: " + s_time)
     os.chdir(WD)
 
-    # sub = gpd.read_file(r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\matched_sample_v1.shp")
+    # sub = gpd.read_file(r"data\vector\final\matched_sample_v1.shp")
     # sub_ids = sub["field_id"].tolist()
 
     # calculate_statistics_of_surrounding_fields(
-    #     iacs_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\IACS\IACS_ALL_2018_NEW_3035.shp",
-    #     out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\tables\surrounding_fields_stats_sample.csv",
+    #     iacs_pth=r"data\vector\IACS\IACS_ALL_2018_NEW_3035.shp",
+    #     out_pth=r"data\tables\surrounding_fields_stats_sample.csv",
     #     sub_ids=sub_ids,
     #     buffer_radius=1000)
 
-    calculate_statistics_of_surrounding_fields(
-        iacs_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\IACS\IACS_ALL_2018_with_grassland_recl.shp",
-        out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\tables\surrounding_fields_stats_ALL.csv",
-        buffer_radius=1000)
+    # calculate_statistics_of_surrounding_fields(
+    #     iacs_pth=r"data\vector\IACS\IACS_ALL_2018_with_grassland_recl.shp",
+    #     out_pth=r"data\tables\surrounding_fields_stats_ALL_100m.csv",
+    #     buffer_radius=100)
+    #
+    # calculate_statistics_of_surrounding_fields(
+    #     iacs_pth=r"data\vector\IACS\IACS_ALL_2018_with_grassland_recl.shp",
+    #     out_pth=r"data\tables\surrounding_fields_stats_ALL_500m.csv",
+    #     buffer_radius=500)
+    #
+    # calculate_statistics_of_surrounding_fields(
+    #     iacs_pth=r"data\vector\IACS\IACS_ALL_2018_with_grassland_recl.shp",
+    #     out_pth=r"data\tables\surrounding_fields_stats_ALL_1000m.csv",
+    #     buffer_radius=1000)
+
+    ## Merge tables
+    print("Merge tables: read data.")
+    df1 = pd.read_csv(r"data\tables\surrounding_fields_stats_ALL_100m.csv")
+    df2 = pd.read_csv(r"data\tables\surrounding_fields_stats_ALL_500m.csv")
+    df3 = pd.read_csv(r"data\tables\surrounding_fields_stats_ALL_1000m.csv")
+
+    print("Rename columns")
+    rs = [100, 500, 1000]
+    for i, df in enumerate([df1, df2, df3]):
+        for col in ["surrf_mean", "surrf_min", "surrf_max", "surrf_median", "surrf_std", "surrf_no_fields"]:
+            df[col] = round(df[col], 2)
+            df.rename(columns={col: f"{col}_{rs[i]}"}, inplace=True)
+
+    print("Write out.")
+    df_out = pd.merge(df1, df2, how="left", on="field_id")
+    df_out = pd.merge(df_out, df3, how="left", on="field_id")
+    df_out.to_csv(r"data\tables\surrounding_fields_mean_sizes_ALL_.csv")
 
     ## For all fields+grassland parcels runtime is:
     # start: Wed, 26 Jul 2023 13:38:08

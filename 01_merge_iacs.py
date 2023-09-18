@@ -650,12 +650,12 @@ def main():
     #     out_pth=r"data\tables\grassland_statistics.xlsx"
     # )
     #
-    # explore_farm_distribution_across_states(
-    #     iacs=iacs,
-    #     shp_out_pth=r"data\vector\IACS\IACS_2018_farms_in_multiple_states.shp",
-    #     csv_out_pth=fr"data\tables\farm_distribution_across_states.csv",
-    #     plt_out_pth=r"figures\share_of_farm_outside_main_state_png"
-    # )
+    explore_farm_distribution_across_states(
+        iacs=iacs,
+        shp_out_pth=r"data\vector\IACS\IACS_2018_farms_in_multiple_states.shp",
+        csv_out_pth=fr"data\tables\farm_distribution_across_states.csv",
+        plt_out_pth=r"figures\share_of_farm_outside_main_state_png"
+    )
     #
     # explore_field_sizes(
     #     iacs=iacs,
