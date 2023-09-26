@@ -20,10 +20,13 @@ def accuracy_assessment(df, pred_cols, ref_cols, out_pth):
 
     fig, axs = plt.subplots(nrows=len(pred_cols), ncols=1, figsize=plotting_lib.cm2inch(30, 15 * len(pred_cols)))
 
-
     for i, pred_col in enumerate(pred_cols):
         ref_col = ref_cols[i]
         df_curr = df.dropna(subset=[pred_col]).copy()
+        df_curr[ref_col] = round(df_curr[ref_col], 1)
+        df_curr = df_curr.loc[df_curr[ref_col] > 0].copy()
+        t = df_curr.loc[df_curr[ref_col] > 6000].copy()
+        print(len(t))
 
         if len(pred_cols) == 1:
             ax = axs
@@ -33,12 +36,15 @@ def accuracy_assessment(df, pred_cols, ref_cols, out_pth):
         predictions = df_curr[pred_col]
         reference = df_curr[ref_col]
 
+        n = len(df_curr)
         errors = abs(predictions - reference)
         mae = round(np.mean(errors), 2)
         mse = mean_squared_error(reference, predictions)
         rmse = math.sqrt(mse)
-        mape = (errors / reference) * 100
-        accuracy = 100 - np.mean(mape)
+        ape = (errors / reference) * 100
+        accuracy = 100 - np.mean(ape)
+        a = np.sum(errors) / n
+        mape = np.mean(ape)
 
         sns.scatterplot(y=predictions, x=reference, s=1, ax=ax)
 
@@ -52,7 +58,8 @@ def accuracy_assessment(df, pred_cols, ref_cols, out_pth):
         ax.set_ylabel("Farm size prediction [ha]")
         ax.set_xlabel("Farm size reference [ha]")
 
-        text = f"MAE: {round(mae, 1)}\nMSE: {round(mse, 1)}\nRMSE: {round(rmse, 1)}, \nAccuracy: {round(accuracy, 1)}"
+        # text = f"{n:,} fields\nMean bias: {round(a, 1)}\nPrecision: {round(p, 1)}\nRMSE: {round(u, 1)}\nMAPE: {round(mape, 1)}"
+        text = f"{n:,} fields\nMean bias: {round(a, 1)}\nMAE: {round(mae, 1)}\nRMSE: {round(rmse, 1)}\nMAPE: {round(mape, 1)}"
         ax.annotate(text=text, xy=(.1, .8), xycoords="axes fraction")
         # ax.tick_params(axis='x', labelrotation=45)
 
@@ -98,6 +105,7 @@ def plot_apu(preds, pred_cols, ref_cols, apu_plot_pth, qcut=None):
         res_dict = {"bin": [], "n": [], "a": [], "p": [], "u": [], "mape": []}
         preds_curr = preds.dropna(subset=[pred_col]).copy()
         preds_curr[ref_col] = round(preds_curr[ref_col], 1)
+        preds_curr = preds_curr.loc[preds_curr[ref_col] > 0].copy()
 
         ## Discretize farm sizes into ventiles
         if qcut:
@@ -106,8 +114,8 @@ def plot_apu(preds, pred_cols, ref_cols, apu_plot_pth, qcut=None):
             nbins = 20
             bins = pd.IntervalIndex.from_tuples([(0, 5), (5, 10), (10, 20), (20, 50), (50, 100), (100, 200), (200, 500),
                                                  (500, 1000), (1000, 7000)])
-            preds_curr["bins"] = pd.cut(preds_curr[ref_col], bins=bins) #, labels=labels)
-
+            preds_curr["bins"] = pd.cut(preds_curr[ref_col], bins=bins,) #, labels=labels)
+            t = preds_curr.loc[preds_curr["bins"].isna()].copy()
         for bin in preds_curr["bins"].unique():
             df_sub = preds_curr.loc[preds_curr["bins"] == bin].copy()
             n = len(df_sub)
@@ -345,14 +353,14 @@ def main():
         pred_cols=["rfr_pred", "bayes_pred"],
         ref_cols=["farm_size_r", "farm_size_ha"],
         apu_plot_pth=r"models\rfr_comp_best_bayes_model_replicated_same_ids\apu_plot_rfr+bayes_test_cut.png")
-
-    plot_apu(
-        preds=preds_test,
-        pred_cols=["rfr_pred", "bayes_pred"],
-        ref_cols=["farm_size_r", "farm_size_ha"],
-        apu_plot_pth=r"models\rfr_comp_best_bayes_model_replicated_same_ids\apu_plot_rfr+bayes_test.png",
-        qcut=20
-    )
+    #
+    # plot_apu(
+    #     preds=preds_test,
+    #     pred_cols=["rfr_pred", "bayes_pred"],
+    #     ref_cols=["farm_size_r", "farm_size_ha"],
+    #     apu_plot_pth=r"models\rfr_comp_best_bayes_model_replicated_same_ids\apu_plot_rfr+bayes_test.png",
+    #     qcut=20
+    # )
 
     accuracy_assessment(
         df=preds_test,

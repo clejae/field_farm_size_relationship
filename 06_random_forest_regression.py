@@ -65,6 +65,7 @@ def get_feature_importances(pipe, X_test, y_test, out_folder, descr):
     ## Get feature importance
     ## https://mljar.com/blog/feature-importance-in-random-forest/
     sorted_idx = pipe["regressor"].feature_importances_.argsort()
+    plt.figure(figsize=(16,16))
     plt.barh(X_test.columns[sorted_idx], pipe["regressor"].feature_importances_[sorted_idx])
     plt.xlabel("Random Forest Feature Importance")
     plt.tight_layout()
@@ -107,10 +108,17 @@ def accuracy_assessment(pipe, X_test, y_test, out_folder, descr):
                 "accuracy": accuracy
                 }
 
+    # Calculate the limits for the plot
+    min_val = min(min(y_test), min(predictions))
+    max_val = max(max(y_test), max(predictions))
+
     sns.scatterplot(y=predictions, x=y_test, s=1)
+    plt.plot([min_val, max_val], [min_val, max_val], color='grey', label='1-to-1 Line')
     plt.ylabel("Prediction")
     plt.xlabel("Reference")
-    plt.savefig(f"{out_folder}\scatter_pred_vs_ref_{descr}.png")
+    text = f"MAE: {round(mae, 1)}\nRMSE: {round(rmse, 1)}\nMAPE: {round(np.mean(mape), 1)}"
+    plt.annotate(text=text, xy=(.1, .8), xycoords="axes fraction")
+    plt.savefig(os.path.join(out_folder, f"scatter_pred_vs_ref_{descr}.png"))
     plt.close()
 
     return acc_dict
@@ -963,19 +971,62 @@ def main():
 
     ########################################## Prepare data ##########################################
     # ToDo: Clean the input data by removing all field < 100m² --> Run everything again.
-    log_and_scale_data(
-        input_pth=rf'data\test_run2\all_predictors_w_grassland_.csv',
-        output_pth=rf'models\all_predictors_w_grassland_w_sqr_log_and_scaled.csv'
-    )
+    # When creating the IACS_ALL dataset, drop first all fields < 100m²
+    # Calculate statistics of surrounding field sizes, include still all fields!
+    # Then get rid of farms that consist of only one field
+    # Get also rid of farms that are not from SA, TH and BB but have fields there
+    # Then log and scale the data
 
-    run_descr = "rfr_comp_best_bayes_model_replicated_same_ids"
+
+    # log_and_scale_data(
+    #     input_pth=rf'data\test_run2\all_predictors_w_grassland_.csv',
+    #     output_pth=rf'models\all_predictors_w_grassland_w_sqr_log_and_scaled.csv'
+    # )
+
+    # run_descr = "rfr_all_variables"
+    # print(f"############# {run_descr}")
+    # random_forest_wrapper_clean(
+    #     iacs_pth=rf'models\all_predictors_w_grassland_w_sqr_log_and_scaled.csv',
+    #     dep_var="farm_size_r",
+    #     indep_vars=["log_field_size", "log_surrf_mean", "log_surrf_std", "log_surrf_min", "log_surrf_max", 'propAg1000',
+    #                 'avgTRI1000', 'avgTRI0', 'ElevationA', 'inter_sfm_prag', "federal_st", "new_IDKTYP"],
+    #     categorical_vars=["federal_st", "new_IDKTYP"],
+    #     n_estimators=1000,
+    #     train_size=0.1,
+    #     test_size=0.1,
+    #     run_descr=run_descr,
+    #     out_folder=rf"models\{run_descr}",
+    #     make_predictions=True,
+    #     write_model_out=False
+    # )
+
+    # run_descr = "rfr_comp_best_bayes_model_replicated_same_ids"
+    # print(f"############# {run_descr}")
+    # train_id_df = pd.read_csv(r"data\tables\sample_large_025.csv")
+    # train_ids = train_id_df["field_id"].tolist()
+    # random_forest_wrapper_clean(
+    #     iacs_pth=rf'models\all_predictors_w_grassland_w_sqr_log_and_scaled.csv',
+    #     dep_var="farm_size_r",
+    #     indep_vars=["log_field_size", "log_surrf_mean", 'propAg1000', 'SQRAvrg', 'inter_sfm_prag', "inter_cr_st"],
+    #     categorical_vars=["inter_cr_st"],
+    #     n_estimators=1000,
+    #     train_ids=train_ids,
+    #     test_size=0.75,
+    #     run_descr=run_descr,
+    #     out_folder=rf"models\{run_descr}",
+    #     make_predictions=True,
+    #     write_model_out=False
+    # )
+
+    run_descr = "rfr_comp_best_bayes_model_replicated_same_ids_all_variables"
     print(f"############# {run_descr}")
     train_id_df = pd.read_csv(r"data\tables\sample_large_025.csv")
     train_ids = train_id_df["field_id"].tolist()
     random_forest_wrapper_clean(
         iacs_pth=rf'models\all_predictors_w_grassland_w_sqr_log_and_scaled.csv',
         dep_var="farm_size_r",
-        indep_vars=["log_field_size", "log_surrf_mean", 'propAg1000', 'SQRAvrg', 'inter_sfm_prag', "inter_cr_st"],
+        indep_vars=["log_field_size", "log_surrf_mean", "log_surrf_std", "log_surrf_min", "log_surrf_max", 'propAg1000',
+                    'SQRAvrg', 'avgTRI1000', 'avgTRI0', 'ElevationA', 'inter_sfm_prag', "inter_cr_st"],
         categorical_vars=["inter_cr_st"],
         n_estimators=1000,
         train_ids=train_ids,
@@ -985,7 +1036,6 @@ def main():
         make_predictions=True,
         write_model_out=False
     )
-
 
     # print("############# rfr_comp_best_bayes_model_replicated")
     # random_forest_wrapper_clean(

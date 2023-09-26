@@ -438,7 +438,7 @@ if __name__ == '__main__':
 
     merge_surr_fields_with_other_variables(
         iacs_pth=r"test_run2/all_predictors_w_grassland.shp",
-        surrf_pth=r"tables/surrounding_fields_mean_sizes_ALL_.csv",
+        surrf_pth=r"tables/surrounding_fields_mean_sizes_ALL_1000m.csv",
         out_pth=r"test_run2/all_predictors_w_grassland_w_additional_surrf.csv"
     )
 
