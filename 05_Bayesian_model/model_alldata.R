@@ -26,8 +26,8 @@ model_formula <- bf(farm_size_ha ~ 1 +
 
 df_sample_large <- df_sub_1 %>% sample_frac(0.25)
 df_sample_large[which(df_sample_large$fieldSizeM < 100),]
-write.csv(df_sample_large, 'sample_large_025.csv')
-df_sample_large <- read.csv('sample_large_025.csv')
+write.csv(df_sample_large, '05_Bayesian_model/data/sample_large_025.csv')
+df_sample_large <- read.csv('05_Bayesian_model/data/sample_large_025.csv')
 
 
 model_surrf_lognorm_7_full<- brm(model_formula, 
