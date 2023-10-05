@@ -37,7 +37,7 @@ ggplot(data=merged %>% sample_frac(0.001),aes(x=farm_size_ha, y=preds)) + geom_p
   #geom_pointrange(data=merged %>% sample_frac(0.001),aes(x=farm_size, y=preds, ymin=lb_05, ymax=ub_95)) + 
   xlim(0, 1000) + ylim(0, 1000) + geom_smooth(method='lm')
 
-write_sf(obj=merged, dsn="preds_full_sp.gpkg")
+write_sf(obj=merged, dsn="05_Bayesian_model/data/preds_full_sp.gpkg")
 
 
 df_sub_1 %>% filter(preds < 10000) %>% sample_frac(0.01) %>%

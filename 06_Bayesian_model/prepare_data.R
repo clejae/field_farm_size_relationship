@@ -74,5 +74,5 @@ df[,c(3, 13:26, 30:31)] <- scale(df[,c(3, 13:26, 30:31)])
 #write.csv(df, 'full_merged_predict.csv')
 df_full <- df
 
-write.csv(df_full, 'df_sample_new.csv')
+write.csv(df_full, '05_Bayesian_model/data/df_sample_new.csv')
 ########################################

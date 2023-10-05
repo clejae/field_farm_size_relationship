@@ -129,7 +129,7 @@ ggplot(data = newdata %>% filter(federal_st == federal_st_select) , aes((log_fie
   ylim(0, 700) #+ xlim(-4, 4)
 
 
-jpeg("F:/Max/Field_s_Farm_s/figures/predictions_DDR.jpeg", 
+jpeg("05_Bayesian_model/figures/predictions_DDR.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
@@ -158,7 +158,7 @@ ggplot() +
 dev.off()
 
 
-jpeg("F:/Max/Field_s_Farm_s/figures/predictions_West.jpeg", 
+jpeg("05_Bayesian_model/figures/predictions_West.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
@@ -232,7 +232,7 @@ df_ranef$linetype <- "22"
 df_ranef[which(df_ranef$FormerDDRmember==1),"linetype"] <- "solid"
 linetype_mapping <- c(df_ranef$linetype)
 unique(linetype_mapping)
-jpeg("F:/Max/Field_s_Farm_s/figures/varying_slopes.jpeg", 
+jpeg("05_Bayesian_model/figures/varying_slopes.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
@@ -255,7 +255,7 @@ ggplot()+
 
 dev.off()
 
-jpeg("F:/Max/Field_s_Farm_s/figures/varying_intercepts.jpeg", 
+jpeg("05_Bayesian_model/figures/varying_intercepts.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
@@ -281,7 +281,7 @@ dev.off()
 
 
 
-jpeg("F:/Max/Field_s_Farm_s/figures/yarying_intercepts_sigma.jpeg", 
+jpeg("05_Bayesian_model/figures/yarying_intercepts_sigma.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
@@ -307,7 +307,7 @@ dev.off()
 
 summary(model_surrf_lognorm_7)
 
-jpeg("F:/Max/Field_s_Farm_s/figures/fixed_eff_fs.jpeg", 
+jpeg("05_Bayesian_model/figures/figures/fixed_eff_fs.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
@@ -320,7 +320,7 @@ dev.off()
 
 
 
-jpeg("F:/Max/Field_s_Farm_s/figures/fixed_eff_surfs.jpeg", 
+jpeg("05_Bayesian_model/figures/fixed_eff_surfs.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
