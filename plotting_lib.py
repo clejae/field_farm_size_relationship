@@ -43,7 +43,7 @@ def plot_map(shp, out_pth, col, vmin=None, vmax=None, shp2_pth=None, highlight_e
     plt.close()
 
 
-def plot_maps_in_grid(shp, out_pth, cols, nrow, ncol, figsize, shp2_pth=None, titles=None, highlight_extremes=False, dpi=300):
+def plot_maps_in_grid(shp, out_pth, cols, nrow, ncol, figsize, shp2_pth=None, shp3_pth=None, titles=None, highlight_extremes=False, dpi=300):
 
     import numpy as np
     import matplotlib.pyplot as plt
@@ -52,6 +52,11 @@ def plot_maps_in_grid(shp, out_pth, cols, nrow, ncol, figsize, shp2_pth=None, ti
     # ncol = len(cols)
     print(f'Plotting {cols} to {out_pth}')
     fig, axs = plt.subplots(nrow, ncol, figsize=figsize)
+
+    fontsize = 16
+    plt.rcParams['font.size'] = fontsize
+    plt.rcParams['font.family'] = 'sans-serif'
+    plt.rcParams['font.sans-serif'] = ['Calibri']
 
     for i, col in enumerate(cols):
         ix = np.unravel_index(i, axs.shape)
@@ -63,18 +68,21 @@ def plot_maps_in_grid(shp, out_pth, cols, nrow, ncol, figsize, shp2_pth=None, ti
             column=col,
             ax=axs[ix],
             legend=True,
-            legend_kwds={'label': f"{col}", 'orientation': "horizontal", "fraction": 0.04, "anchor": (0.5, 1.5)},
+            legend_kwds={'label': f"", 'orientation': "horizontal", "fraction": 0.16, "anchor": (0.9, 1.5)},
             vmin=vmin,
             vmax=vmax,
             edgecolor=None,
         )
+
+        colorbar = axs[ix].get_figure().get_axes()[1]  # Getting the colorbar axis
+        colorbar.tick_params(labelsize=fontsize)
 
         axs[ix].axis("off")
         axs[ix].margins(0)
 
         if titles:
             title = titles[i]
-            axs[ix].set_title(title, size=14)
+            axs[ix].set_title(title)
         axs[ix].axis("off")
 
         if highlight_extremes:
@@ -84,6 +92,10 @@ def plot_maps_in_grid(shp, out_pth, cols, nrow, ncol, figsize, shp2_pth=None, ti
         if shp2_pth:
             shp2 = gpd.read_file(shp2_pth)
             shp2.plot(edgecolor='black', facecolor="none", ax=axs[ix], lw=0.3, zorder=2)
+
+        if shp3_pth:
+            shp3 = gpd.read_file(shp3_pth)
+            shp3.plot(edgecolor='black', facecolor="none", ax=axs[ix], lw=2, zorder=2)
 
     fig.tight_layout()
     plt.savefig(out_pth, dpi=dpi)

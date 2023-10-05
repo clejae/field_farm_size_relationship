@@ -21,7 +21,7 @@ from joblib import Parallel, delayed
 
 # from osgeo import gdal,osr
 # import io
-# import time
+import time
 # import matplotlib.pyplot as plt
 # from rasterio.mask import mask
 # from scipy import stats
@@ -36,6 +36,61 @@ WD = "//141.20.140.92/SAN_Projects/FORLand/Field_farm_size_relationship/data/"
 os.chdir(WD)
 
 #----------------------------------------------------------------------------------------------------
+
+def calculate_statistics_of_surrounding_fields(iacs_pth, out_pth, sub_ids=None, buffer_radius=1000):
+    """
+    1. Calculate centroids, keep field size column.
+    2. Draw a buffer around each field (use only subset if provided).
+    3. Get centroids that fall in buffer.
+    4. Drop current centroid.
+    5. Calculate mean, std, median, no. fields.
+    :param iacs_pth:
+    :param sub_ids:
+    :param out_pth:
+    :param buffer_radius
+    :return:
+    """
+
+    print("Read IACS data.")
+    iacs = gpd.read_file(iacs_pth)
+
+    print("Calculate the statistics.")
+    ## Replace field geometries with centroids, because all further calculation is only based on them
+    iacs["geometry"] = iacs["geometry"].centroid
+
+    ## Create a second layer with the buffers
+    iacs_buffer = iacs.copy()
+    iacs_buffer["geometry"] = iacs_buffer["geometry"].buffer(buffer_radius)
+    iacs_buffer = iacs_buffer[["field_id", "geometry"]]
+
+    ## Get field ids for which the calculation should be done
+    if not sub_ids:
+        field_ids = list(iacs["field_id"].unique())
+    else:
+        field_ids = sub_ids
+
+    ## Intersect buffers with centroids
+    intersection = gpd.sjoin(iacs_buffer.loc[iacs_buffer["field_id"].isin(field_ids)], iacs)
+
+    ## For all buffers, drop fields that are the centre of the buffers, because they should not impact the statistics
+    intersection = intersection.loc[intersection["field_id_left"] != intersection["field_id_right"]].copy()
+
+    ## Calculate the statistics
+    stats = intersection.groupby("field_id_left").agg(
+        surrf_mean=pd.NamedAgg("field_size", "mean"),
+        surrf_median=pd.NamedAgg("field_size", "median"),
+        surrf_std=pd.NamedAgg("field_size", "std"),
+        surrf_min=pd.NamedAgg("field_size", "min"),
+        surrf_max=pd.NamedAgg("field_size", "max"),
+        surrf_no_fields=pd.NamedAgg("field_id_right", "nunique")
+    ).reset_index()
+
+    stats.rename(columns={"field_id_left": "field_id"}, inplace=True)
+
+    print("Write results to:", out_pth)
+    stats.to_csv(out_pth, index=False)
+
+    print("Done!")
 
 def compute_M(data):
     cols = np.arange(data.size)
@@ -91,21 +146,17 @@ def zonal_stats_alt(gpd, rst_fn, stats=["mean"]):
     gpd['std'] = std_values
     return gpd
 
-
-def prepare_explanatory_variables():
+def prepare_explanatory_variables(iacs_pth, dem_pth, tri_pth, sqr_pth, sum_agr_out_pth, elevation_out_pth,
+                                  tri_out_pth, sqr_out_pth, predictors_out_pth):
     # ----------------------------------------------------------------------------------------------------
     ###VECTOR DATA PROCESSING
     ##read vector data
     # invekos
-    iacs = gpd.read_file("vector/IACS/IACS_ALL_2018_with_grassland_recl_3035.shp")
+    iacs = gpd.read_file(iacs_pth)
     iacs.dropna(inplace=True)
-
-    # hexagon grid
-    hexa = gpd.read_file("vector/grid/hexagon_grid_GER_5km_3035.shp")
 
     # data info
     print("CRS IACS:", iacs.crs)
-    print("CRS Hexagons:", hexa.crs)
 
     # ----------------------------------------------------------------------------------------------------
     # calculate field sizes and hexagon sizes
@@ -114,11 +165,13 @@ def prepare_explanatory_variables():
     iacs["fieldSizeM2"] = iacs.area
     # iacs.drop(["field_size"], axis=1, inplace=True)
 
-    # calculate area size per hexagon
-    hexa["hexaSizeM2"] = hexa.area
-
-    # rename id to hex_id for clarity
-    hexa.rename(columns={'id': 'hexa_id'}, inplace=True)
+    # # calculate area size per hexagon
+    # hexagon grid
+    # hexa = gpd.read_file(hexa_pth)
+    # hexa["hexaSizeM2"] = hexa.area
+    #
+    # # rename id to hex_id for clarity
+    # hexa.rename(columns={'id': 'hexa_id'}, inplace=True)
 
     # ----------------------------------------------------------------------------------------------------
     ###Count number of fields per farm
@@ -139,26 +192,26 @@ def prepare_explanatory_variables():
     print("Values for FormerDDRmember:", iacs.FormerDDRmember.unique())
 
     # ----------------------------------------------------------------------------------------------------
-
-    # calculate centroids of fields
-    iacs["centroids"] = iacs["geometry"].centroid
-    centroids = iacs[["field_id", "centroids"]].copy()
-    centroids.rename(columns={"centroids": "geometry"}, inplace=True)
-    centroids = centroids.set_geometry("geometry")
-    iacs.drop(columns=["centroids"], inplace=True)
-
-    ## Create a centroids layer and add the hex id to the centroids
-    centroids = gpd.GeoDataFrame(centroids, crs=3035)
-    centroids = gpd.sjoin(centroids, hexa, how="left", op="intersects")
-
-    # add centroids info to invekos dataframe
-    # check if same length
-
-    if len(iacs) == len(centroids):
-        print("Merging IACS with centroids and hexagon information.")
-        iacs = pd.merge(iacs, centroids[["field_id", "hexa_id"]], how="left", on="field_id")
-    else:
-        warnings.warn("IACS and centroids don't have the same length!", len(iacs), len(centroids))
+    #
+    # # calculate centroids of fields
+    # iacs["centroids"] = iacs["geometry"].centroid
+    # centroids = iacs[["field_id", "centroids"]].copy()
+    # centroids.rename(columns={"centroids": "geometry"}, inplace=True)
+    # centroids = centroids.set_geometry("geometry")
+    # iacs.drop(columns=["centroids"], inplace=True)
+    #
+    # ## Create a centroids layer and add the hex id to the centroids
+    # centroids = gpd.GeoDataFrame(centroids, crs=25832)
+    # centroids = gpd.sjoin(centroids, hexa, how="left", op="intersects")
+    #
+    # # add centroids info to invekos dataframe
+    # # check if same length
+    #
+    # if len(iacs) == len(centroids):
+    #     print("Merging IACS with centroids and hexagon information.")
+    #     iacs = pd.merge(iacs, centroids[["field_id", "hexa_id"]], how="left", on="field_id")
+    # else:
+    #     warnings.warn("IACS and centroids don't have the same length!", len(iacs), len(centroids))
 
     # ----------------------------------------------------------------------------------------------------
     def process_chunk(chunk, iacs):
@@ -201,7 +254,7 @@ def prepare_explanatory_variables():
     iacs = pd.merge(iacs, intersected_combined, "left", left_index=True, right_index=True)
     iacs["propAg1000"] = round(iacs["sumAgr1000"] / (math.pi * 1000 * 1000), 2)
 
-    iacs[["field_id", "propAg1000", "sumAgr1000"]].to_csv(r"test_run2\SumAgr\SumAgr_w_grassland.csv", index=False)
+    iacs[["field_id", "propAg1000", "sumAgr1000"]].to_csv(sum_agr_out_pth, index=False)
 
     #----------------------------------------------------------------------------------------------------
     #----------------------------------------------------------------------------------------------------
@@ -209,7 +262,8 @@ def prepare_explanatory_variables():
     ###RASTER DATA PROCESSING
     #----------------------------------------------------------------------------------------------------
     #calculate average elevation per field
-    with rasterio.open("raster/Dem_3035.tif") as src:
+
+    with rasterio.open(dem_pth) as src:
         affine = src.transform #using affine transformation matrix
         array = src.read(1)
         ndval = src.nodatavals[0]
@@ -218,7 +272,8 @@ def prepare_explanatory_variables():
 
     zonal_stats_fields.rename(columns={'mean': 'ElevationA', 'std': 'sdElev0'}, inplace=True)
     iacs = pd.concat([iacs, zonal_stats_fields], axis=1)
-    iacs[["field_id", "ElevationA", "sdElev0"]].to_csv(r"test_run2\elevationAvrg\elevationAvrg_w_grassland.csv", index=False)
+
+    iacs[["field_id", "ElevationA", "sdElev0"]].to_csv(elevation_out_pth, index=False)
 
     #adding field statistics back to original GeoDataFrame
     # dem = pd.concat([iacs, zonal_stats_fields], axis=1)
@@ -228,7 +283,8 @@ def prepare_explanatory_variables():
 
     # ----------------------------------------------------------------------------------------------------
     # calculate average TRI per field
-    with rasterio.open("raster/DEM_TRI_GER_25m.tif") as src:
+
+    with rasterio.open(tri_pth) as src:
         affine = src.transform  # using affine transformation matrix
         array = src.read(1)
         ndval = src.nodatavals[0]
@@ -254,7 +310,8 @@ def prepare_explanatory_variables():
     zonal_stats_buff1000.rename(columns={'mean': 'avgTRI1000'}, inplace=True)
     zonal_stats_fields = pd.concat([zonal_stats_fields, zonal_stats_buff500, zonal_stats_buff1000], axis=1)
     iacs = pd.concat([iacs, zonal_stats_fields], axis=1)
-    iacs[["field_id", "avgTRI0", "avgTRI500", "avgTRI1000"]].to_csv(r"test_run2\TRI\TRI_w_grassland.csv", index=False)
+
+    iacs[["field_id", "avgTRI0", "avgTRI500", "avgTRI1000"]].to_csv(tri_out_pth, index=False)
 
     # adding field statistics back to original GeoDataFrame
     # tri = pd.concat([iacs, zonal_stats_fields, zonal_stats_buff500, zonal_stats_buff1000], axis=1)
@@ -262,7 +319,8 @@ def prepare_explanatory_variables():
 
     # ----------------------------------------------------------------------------------------------------
     # calculate SQR
-    with rasterio.open("raster/sqr1000_250_v10_3035.tif") as src:
+
+    with rasterio.open(sqr_pth) as src:
         affine = src.transform  # using affine transformation matrix
         array = src.read(1)
         ndval = src.nodatavals[0]
@@ -272,15 +330,19 @@ def prepare_explanatory_variables():
             zonal_stats(iacs, array, affine=affine, nodata=np.nan, all_touched=True, stats=["mean"]))
 
     zonal_stats_fields.rename(columns={'mean': 'SQRAvrg'}, inplace=True)
-    zonal_stats_fields.to_csv(r"test_run2\SQRAvrg\SQRAvrg_w_grassland.csv", index=False)
+    # zonal_stats_fields.to_csv(r"test_run2\SQRAvrg\SQRAvrg_w_grassland.csv", index=False)
     iacs = pd.concat([iacs, zonal_stats_fields], axis=1)
-    iacs[["field_id", "SQRAvrg"]].to_csv(r"test_run2\SQRAvrg\SQRAvrg_w_grassland.csv", index=False)
+    iacs[["field_id", "SQRAvrg"]].to_csv(sqr_out_pth, index=False)
 
     # ----------------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------
     # OUTPUT
     # write shapefile
-    iacs.to_file("test_run2/all_predictors_w_grassland", driver="ESRI Shapefile")
+    if predictors_out_pth.endswith('.gpkg'):
+        iacs.to_file(predictors_out_pth, driver="GPKG")
+    elif predictors_out_pth.endswith('.csv'):
+        iacs.drop(columns=["geometry"], inplace=True)
+        iacs.to_csv(predictors_out_pth, index=False)
 
     # adding statistics back to original GeoDataFrame
     # sqr = pd.concat([iacs, zonal_stats_fields], axis=1)
@@ -418,7 +480,12 @@ def prepare_explanatory_variables():
 
 
 def merge_surr_fields_with_other_variables(iacs_pth, surrf_pth, out_pth):
-    iacs = gpd.read_file(iacs_pth)
+    if iacs_pth.endswith('.gpkg') | iacs_pth.endswith('.shp'):
+        iacs = gpd.read_file(iacs_pth)
+    elif iacs_pth.endswith('.csv'):
+        iacs = pd.read_csv(iacs_pth)
+    else:
+        return
     surr = pd.read_csv(surrf_pth)
     for col in surr.columns:
         surr.loc[surr[col].isna(), col] = 0
@@ -432,13 +499,38 @@ def merge_surr_fields_with_other_variables(iacs_pth, surrf_pth, out_pth):
     iacs.to_csv(out_pth[:-3] + "csv", index=False)
 
 
-if __name__ == '__main__':
+def main():
+    s_time = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())
+    print("start: " + s_time)
+    os.chdir(WD)
 
-    # prepare_explanatory_variables()
+    # calculate_statistics_of_surrounding_fields(
+    #     iacs_pth=r"vector\IACS\IACS_ALL_2018_cleaned.gpkg",
+    #     out_pth=r"tables\predictors\surrounding_fields_stats_ALL_1000m.csv",
+    #     buffer_radius=1000)
+
+    prepare_explanatory_variables(
+        iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
+        dem_pth="raster/Dem_3035.tif",
+        tri_pth="raster/DEM_TRI_GER_25m.tif",
+        sqr_pth="raster/sqr1000_250_v10_3035.tif",
+        sum_agr_out_pth="tables/predictors/SumAgr_w_grassland.csv",
+        elevation_out_pth=r"tables/predictors/elevationAvrg_w_grassland.csv",
+        tri_out_pth=r"tables/predictors/TRI_w_grassland.csv",
+        sqr_out_pth=r"tables/predictors/SQRAvrg_w_grassland.csv",
+        predictors_out_pth="tables/predictors/soil_landscape_predictors.csv"
+    )
 
     merge_surr_fields_with_other_variables(
-        iacs_pth=r"test_run2/all_predictors_w_grassland.shp",
-        surrf_pth=r"tables/surrounding_fields_mean_sizes_ALL_1000m.csv",
-        out_pth=r"test_run2/all_predictors_w_grassland_w_additional_surrf.csv"
+        iacs_pth=r"tables/predictors/soil_landscape_predictors.csv",
+        surrf_pth=r"tables/predictors/surrounding_fields_mean_sizes_ALL_1000m.csv",
+        out_pth=r"tables/predictors/all_predictors_w_grassland.csv"
     )
+
+    e_time = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())
+    print("start: " + s_time)
+    print("end: " + e_time)
+
+if __name__ == '__main__':
+    main()
 

@@ -39,7 +39,7 @@ SAMPLE_PTH = r"data\vector\final\matched_sample-v2.shp"
 ## ------------------------------------------ DEFINE FUNCTIONS ------------------------------------------------#
 
 
-def train_random_forest_regressor(X, y, n_estimators, scaler=True):
+def train_random_forest_regressor(X, y, n_estimators, scaler=False, max_features="sqrt"):
 
     print("Fit regressor")
 
@@ -47,11 +47,11 @@ def train_random_forest_regressor(X, y, n_estimators, scaler=True):
     if scaler:
         pipe = Pipeline([
             ('scaler', StandardScaler()),  # alternative is min-max scaler
-            ('regressor', RandomForestRegressor(n_estimators=n_estimators))
+            ('regressor', RandomForestRegressor(n_estimators=n_estimators, max_features=max_features))
         ])
     else:
         pipe = Pipeline([
-            ('regressor', RandomForestRegressor(n_estimators=n_estimators))
+            ('regressor', RandomForestRegressor(n_estimators=n_estimators, max_features=max_features))
         ])
 
     ## Fit the classifier to the data
@@ -573,76 +573,8 @@ def random_forest_wrapper_new(iacs_pth, out_folder):
     print("Write result shapefile out.")
     iacs.to_csv(fr"{out_folder}\rfr_predictions_{descr}.csv", index=False)
 
-def log_and_scale_data(input_pth, output_pth):
-    print("Read Input data.")
-    iacs = pd.read_csv(input_pth, dtype={"farm_id": str})
-
-    print("Prepare data.")
-
-    ## Subtract field from farm size
-    iacs["farm_size_r"] = iacs["farm_size"] - iacs["field_size"]
-
-    ## Due to some different calculations of the field sizes in prior steps (R-pyhton), sometimes the field sizes are
-    ## only slightly smaller than the farm sizes, causing trouble in later steps
-    iacs.loc[iacs["fieldCount"] == 1, "farm_size_r"] = 0
-    iacs.loc[iacs["fieldCount"] == 1, "farm_size"] = iacs.loc[iacs["fieldCount"] == 1, "field_size"]
-
-    ## Calculate values to m²
-    cols = ["field_size", "surrf_mean", "surrf_medi", "surrf_std", "surrf_min", "surrf_max"]
-    # cols = [
-    #     ["field_size", "surrf_mean_100", "surrf_median_100", "surrf_std_100", "surrf_min_100", "surrf_max_100",
-    #      "surrf_no_fields_100",
-    #      "surrf_mean_500", "surrf_median_500", "surrf_std_500", "surrf_min_500", "surrf_max_500", "surrf_no_fields_500",
-    #      "surrf_mean_1000", "surrf_median_1000", "surrf_std_1000", "surrf_min_1000", "surrf_max_1000",
-    #      "surrf_no_fields_1000"]]
-    for col in cols:
-        iacs[col] = iacs[col] * 10000
-
-    ## Remove all fields smaller 1m²
-    iacs = iacs.loc[iacs["field_size"] >= 2].copy()
-
-    ## Drop zeros in the surrounding field statistics
-    cols = ["surrf_mean", "surrf_medi", "surrf_std", "surrf_min", "surrf_max"]
-    # cols = ["surrf_mean_100", "surrf_median_100", "surrf_std_100", "surrf_min_100", "surrf_max_100",
-    #         "surrf_mean_500", "surrf_median_500", "surrf_std_500", "surrf_min_500", "surrf_max_500",
-    #         "surrf_mean_1000", "surrf_median_1000", "surrf_std_1000", "surrf_min_1000", "surrf_max_1000"]
-    for col in cols:
-        iacs = iacs.loc[iacs[col] > 0].copy()
-
-    ## Calculate natural logarithm
-    # cols = ["field_size", "farm_size", "farm_size_r", "surrf_mean_100", "surrf_median_100", "surrf_std_100",
-    #         "surrf_min_100", "surrf_max_100",
-    #         "surrf_mean_500", "surrf_median_500", "surrf_std_500", "surrf_min_500", "surrf_max_500",
-    #         "surrf_mean_1000", "surrf_median_1000", "surrf_std_1000", "surrf_min_1000", "surrf_max_1000"]
-    cols = ["field_size", "farm_size", "farm_size_r", "surrf_mean", "surrf_medi", "surrf_std", "surrf_min", "surrf_max"]
-    for col in cols:
-        iacs[f"log_{col}"] = np.log(iacs[col])
-    log_cols = [f"log_{col}" for col in cols]
-
-    ## Create interaction terms
-    iacs["inter_cr_st"] = iacs["new_IDKTYP"] + iacs["federal_st"]
-    iacs["inter_sfm_prag"] = iacs["log_surrf_mean"] + iacs["propAg1000"]
-
-    ## Scale variables
-    scale_cols = log_cols + ["inter_sfm_prag", "propAg1000", "ElevationA", "sdElev0", "avgTRI0", "avgTRI500",
-                  "avgTRI1000", "SQRAvrg"]
-    scale_cols.remove("log_farm_size")
-    scale_cols.remove("log_farm_size_r")
-    scale = StandardScaler()
-    for col in scale_cols:
-        iacs[col] = scale.fit_transform(iacs[[col]])
-
-    ## Drop farms that have likely most of their areas outside our study area
-    iacs["fstate_id"] = iacs["farm_id"].apply(lambda x: x[:2])
-    drop_fstate_ids = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "13", "14"]
-    iacs = iacs.loc[~(iacs["fstate_id"].isin(drop_fstate_ids) & iacs["federal_st"].isin(["BB", "SA", "TH"]))].copy()
-    print("Remaining observations:", len(iacs))
-
-    print("Write out")
-    iacs.to_csv(output_pth, index=False)
-
 def random_forest_wrapper_clean(iacs_pth, dep_var, indep_vars, categorical_vars, run_descr, out_folder, train_ids=None,
-                                test_ids=None, n_estimators=1000, train_size=0.1, test_size=0.1,
+                                test_ids=None, n_estimators=500, train_size=0.1, test_size=0.1, max_features="sqrt",
                                 existing_model_pth=None, make_predictions=True, calc_feature_importance=True,
                                 make_accuracy_assessment=True, write_model_out=True):
 
@@ -657,7 +589,7 @@ def random_forest_wrapper_clean(iacs_pth, dep_var, indep_vars, categorical_vars,
         print('Error: Creating directory. ' + out_folder)
 
     ## Define Random Forest parameters
-    print("RFR parameters - n_estimators:", n_estimators, "training size:", train_size)
+    print("RFR parameters - n_estimators:", n_estimators, "training size:", train_size, "max. features:", max_features)
     descr = f"{run_descr}_n{n_estimators}_t{train_size}".replace('.', '')
 
     ## Drop other NAs
@@ -712,7 +644,7 @@ def random_forest_wrapper_clean(iacs_pth, dep_var, indep_vars, categorical_vars,
 
     ## Fit regressor
     if not existing_model_pth:
-        pipe = train_random_forest_regressor(X_train, y_train, n_estimators, scaler=False)
+        pipe = train_random_forest_regressor(X_train, y_train, n_estimators, scaler=False, max_features=max_features)
         if write_model_out:
             print("Write model out.")
             joblib.dump(pipe, rf'{out_folder}\rfr_model_{descr}.pkl')
@@ -983,6 +915,25 @@ def main():
     #     output_pth=rf'models\all_predictors_w_grassland_w_sqr_log_and_scaled.csv'
     # )
 
+    ## Grid search on max_features
+    m_features = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, "sqrt"]
+    for m_feat in m_features:
+        run_descr = f"rfr_grid_search_m_feat_{m_feat}"
+        random_forest_wrapper_clean(
+            iacs_pth=rf'models\all_predictors_w_grassland_w_sqr_log_and_scaled.csv',
+            dep_var="farm_size_r",
+            indep_vars=["log_field_size", "log_surrf_mean", 'propAg1000', 'SQRAvrg', 'inter_sfm_prag', "inter_cr_st"],
+            categorical_vars=["inter_cr_st"],
+            n_estimators=200,
+            train_size=0.05,
+            test_size=0.05,
+            max_features=m_feat,
+            run_descr=run_descr,
+            out_folder=rf"models\{run_descr}",
+            make_predictions=False,
+            write_model_out=False
+        )
+
     # run_descr = "rfr_all_variables"
     # print(f"############# {run_descr}")
     # random_forest_wrapper_clean(
@@ -992,8 +943,8 @@ def main():
     #                 'avgTRI1000', 'avgTRI0', 'ElevationA', 'inter_sfm_prag', "federal_st", "new_IDKTYP"],
     #     categorical_vars=["federal_st", "new_IDKTYP"],
     #     n_estimators=1000,
-    #     train_size=0.1,
-    #     test_size=0.1,
+    #     train_size=0.25,
+    #     test_size=0.75,
     #     run_descr=run_descr,
     #     out_folder=rf"models\{run_descr}",
     #     make_predictions=True,
@@ -1018,24 +969,24 @@ def main():
     #     write_model_out=False
     # )
 
-    run_descr = "rfr_comp_best_bayes_model_replicated_same_ids_all_variables"
-    print(f"############# {run_descr}")
-    train_id_df = pd.read_csv(r"data\tables\sample_large_025.csv")
-    train_ids = train_id_df["field_id"].tolist()
-    random_forest_wrapper_clean(
-        iacs_pth=rf'models\all_predictors_w_grassland_w_sqr_log_and_scaled.csv',
-        dep_var="farm_size_r",
-        indep_vars=["log_field_size", "log_surrf_mean", "log_surrf_std", "log_surrf_min", "log_surrf_max", 'propAg1000',
-                    'SQRAvrg', 'avgTRI1000', 'avgTRI0', 'ElevationA', 'inter_sfm_prag', "inter_cr_st"],
-        categorical_vars=["inter_cr_st"],
-        n_estimators=1000,
-        train_ids=train_ids,
-        test_size=0.75,
-        run_descr=run_descr,
-        out_folder=rf"models\{run_descr}",
-        make_predictions=True,
-        write_model_out=False
-    )
+    # run_descr = "rfr_comp_best_bayes_model_replicated_same_ids_all_variables"
+    # print(f"############# {run_descr}")
+    # train_id_df = pd.read_csv(r"data\tables\sample_large_025.csv")
+    # train_ids = train_id_df["field_id"].tolist()
+    # random_forest_wrapper_clean(
+    #     iacs_pth=rf'models\all_predictors_w_grassland_w_sqr_log_and_scaled.csv',
+    #     dep_var="farm_size_r",
+    #     indep_vars=["log_field_size", "log_surrf_mean", "log_surrf_std", "log_surrf_min", "log_surrf_max", 'propAg1000',
+    #                 'SQRAvrg', 'avgTRI1000', 'avgTRI0', 'ElevationA', 'inter_sfm_prag', "inter_cr_st"],
+    #     categorical_vars=["inter_cr_st"],
+    #     n_estimators=1000,
+    #     train_ids=train_ids,
+    #     test_size=0.75,
+    #     run_descr=run_descr,
+    #     out_folder=rf"models\{run_descr}",
+    #     make_predictions=True,
+    #     write_model_out=False
+    # )
 
     # print("############# rfr_comp_best_bayes_model_replicated")
     # random_forest_wrapper_clean(
