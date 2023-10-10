@@ -46,16 +46,6 @@ def prepare_large_iacs_shp(input_dict, out_pth, grassland=True):
 
     print("\tConcatenating all shapefiles and writing out.")
     out_shp = pd.concat(shp_lst, axis=0)
-
-    t = out_shp.loc[out_shp["field_size"] < 0.005]
-    t2 = out_shp.loc[out_shp["field_size"] < 0.01]
-    print("Fields <50 m²:", len(t), "Fields <100 m²:", len(t2))
-
-    drop_stats = t2.groupby("state").agg(num_fields=pd.NamedAgg("field_id", "count")).reset_index()
-    drop_stats.to_csv(out_pth[:-4] + "_drop_stats.csv", index=False)
-    print(drop_stats)
-
-    out_shp = out_shp.loc[out_shp["field_size"] > 0.01]
     del shp_lst
 
     ## Calculate farm sizes
@@ -109,26 +99,72 @@ def new_crop_names_classification(iacs, crop_name_col, crop_class_col, classific
         13: "AR", #arable grass
         14: "LE", #legumes
         20: "GR", #permanent grassland
-        30: "FA", #unkown
+        30: "UN", #unkown
         40: "PE", #40-mehrjährige Kulturen und Dauerkulturen
         60: "LE", #legumes
-        70: "FA", #field stripes
+        70: "HE", #hedges, tree rows, shore stripes
         80: "UN", #unkown
         90: "GA", #garden flowers
-        95: "MI", #mix
+        95: "OT", #mix
         99: "FA", #fallow
     }
 
-
-
+    ## Reclassify
     iacs[crop_class_col] = iacs[crop_class_col].map(t_dict)
     iacs[crop_class_col].unique()
-    iacs = iacs[iacs[crop_class_col] != "UN"].copy()
+
+    ## Drop unkown and hedges
+    iacs = iacs[~iacs[crop_class_col].isin(["UN", "HE"])].copy()
+
+    ## Reclassify ID_KTYP
+    t_dict = {
+        "MA": "MA",  # maize --> maize
+        "WW": "CE",  # winter wheat --> cereals
+        "SU": "SU",  # sugar beet --> sugar beet
+        "OR": "OR",  # oilseed rape --> oilseed rape
+        "PO": "PO",  # potato --> potatoes
+        "SC": "CE",  # summer cereals --> cereals
+        "TR": "CE",  # triticale --> cereals
+        "WB": "CE",  # winter barely --> cereals
+        "WR": "CE",  # winter rye --> cereals
+        "LE": "LE",  # legumes  --> legumes
+        "AR": "GR",  # arable grass --> grass
+        "GR": "GR",  # permanent grassland --> grass
+        "FA": "OT",  # unkown --> others
+        "PE": "OT",  # 40-mehrjährige Kulturen und Dauerkulturen --> others
+        "UN": "OT",  # unkown --> others
+        "GA": "OT",  # garden flowers --> others
+        "MI": "OT",  # mix --> others
+    }
+
+    iacs[new_crop_class_col] = iacs[crop_class_col].map(t_dict)
+
+    ## Drop fields < 100m²
+    t = iacs.loc[iacs["field_size"] < 0.005]
+    t2 = iacs.loc[iacs["field_size"] < 0.01]
+    print("Fields <50 m²:", len(t), "Fields <100 m²:", len(t2))
+
+    drop_stats = t2.groupby("state").agg(num_fields=pd.NamedAgg("field_id", "count")).reset_index()
+    drop_stats.to_csv(out_pth[:-4] + "_drop_stats.csv", index=False)
+    print(drop_stats)
+
+    iacs = iacs.loc[iacs["field_size"] > 0.01]
+
+    ## Recalculate farm sizes
+    farm_sizes = iacs.groupby("farm_id").agg(
+        farm_size=pd.NamedAgg(column="field_size", aggfunc="sum")
+    ).reset_index()
+    cols = ["field_id", "farm_id", "field_size", "crop_name", crop_class_col, new_crop_class_col,  "state", "geometry"] # without farm size
+    iacs = pd.merge(iacs[cols], farm_sizes, on="farm_id", how="left")
+
+    ## Reorder columns
+    cols = ["field_id", "farm_id", "field_size", "farm_size", "crop_name", crop_class_col, new_crop_class_col, "state", "geometry"]
+    iacs = iacs[cols]
 
     iacs.to_file(out_pth, driver="GPKG")
 
     if validity_check_pth:
-        out_df = iacs[[crop_name_col, crop_class_col]].copy()
+        out_df = iacs[[crop_name_col, crop_class_col, new_crop_class_col]].copy()
         out_df.drop_duplicates(inplace=True)
         out_df.to_csv(validity_check_pth, sep=";", index=False)
 
@@ -197,7 +233,7 @@ def main():
     # )
 
     ## With grasslands
-    pth = fr"data\vector\IACS\IACS_{key}_2018_with_grassland_gt100m2.gpkg"
+    pth = fr"data\vector\IACS\IACS_{key}_2018_all_areas.gpkg"
     iacs = prepare_large_iacs_shp(
         input_dict=input_dict,
         out_pth=pth,
@@ -206,11 +242,11 @@ def main():
     # iacs = gpd.read_file(pth)
 
     ## Reclassify grassland class
-    get_unqiue_crop_names_and_crop_classes_relations(
-        iacs=iacs,
-        crop_name_col="crop_name",
-        crop_class_col="ID_KTYP",
-        out_pth=rf"data\tables\unique_crop_name_class_relations.csv")
+    # get_unqiue_crop_names_and_crop_classes_relations(
+    #     iacs=iacs,
+    #     crop_name_col="crop_name",
+    #     crop_class_col="ID_KTYP",
+    #     out_pth=rf"data\tables\unique_crop_name_class_relations.csv")
 
     classification_df = pd.read_excel(r"data\tables\crop_names_to_new_classes.xlsx")
     iacs = new_crop_names_classification(
@@ -219,10 +255,8 @@ def main():
         crop_class_col="ID_KTYP",
         classification_df=classification_df,
         new_crop_class_col="new_ID_KTYP",
-        out_pth=fr"data\vector\IACS\IACS_{key}_2018_with_grassland_recl.gpkg",
-        validity_check_pth=fr"data\tables\IACS_{key}_2018_with_grassland_recl_validitiy_check.csv")
-
-
+        out_pth=fr"data\vector\IACS\IACS_{key}_2018_cleaned.gpkg",
+        validity_check_pth=fr"data\tables\IACS_{key}_2018_cleaned_validitiy_check.csv")
 
     e_time = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())
     print("start: " + s_time)

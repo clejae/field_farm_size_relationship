@@ -84,7 +84,7 @@ def compare_distributions_of_variables(df, hue_col, out_pth, hue_dict=None):
     plt.close()
 
 
-def draw_sample_with_matched_distributions(iacs_pth, out_pth):
+def draw_sample_with_matched_distributions(iacs_pth, txt_pth, out_folder, out_pth):
     """
     ## 1. Draw a random sample of all data including NAs
     ## 2. Remove NAs from complete dataset --> reduced dataset
@@ -96,14 +96,14 @@ def draw_sample_with_matched_distributions(iacs_pth, out_pth):
     """
 
     print("Read IACS data.")
-    iacs = gpd.read_file(iacs_pth)
-    surr = pd.read_csv(r"Q:\FORLand\Field_farm_size_relationship\data\tables\surrounding_fields_stats_ALL.csv")
-    for col in surr.columns:
-        surr.loc[surr[col].isna(), col] = 0
-    print(len(surr), len(surr.loc[surr.isnull().any(axis=1)]))
-    iacs = pd.merge(iacs, surr, "left", "field_id")
-    for col in surr.columns:
-        iacs.loc[iacs[col].isna(), col] = 0
+    iacs = gpd.read_csv(iacs_pth)
+    # surr = pd.read_csv(r"Q:\FORLand\Field_farm_size_relationship\data\tables\surrounding_fields_stats_ALL.csv")
+    # for col in surr.columns:
+    #     surr.loc[surr[col].isna(), col] = 0
+    # print(len(surr), len(surr.loc[surr.isnull().any(axis=1)]))
+    # iacs = pd.merge(iacs, surr, "left", "field_id")
+    # for col in surr.columns:
+    #     iacs.loc[iacs[col].isna(), col] = 0
     # iacs["ft"] = iacs["CstMaj"].apply(lambda x: str(int(x))[1] if x != 0 else 0)
     # iacs["state"] = iacs["field_id"].apply(lambda x: x[:2])
 
@@ -114,15 +114,15 @@ def draw_sample_with_matched_distributions(iacs_pth, out_pth):
 
     iacs["na"] = 0
     iacs.loc[iacs.isnull().any(axis=1), "na"] = 1
-    # compare_distributions_of_variables(
-    #     df=iacs,
-    #     hue_col="na",
-    #     hue_dict={0: "rows wo NAN", 1: "rows w NAN"},
-    #     out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\matching\01_comparison_sqr_existent_vs_nan.png"
-    # )
+    compare_distributions_of_variables(
+        df=iacs,
+        hue_col="na",
+        hue_dict={0: "rows wo NAN", 1: "rows w NAN"},
+        out_pth=fr"{out_folder}\01_comparison_sqr_existent_vs_nan.png"
+    )
 
     ## 1. Draw a random sample of all data including NAs
-    n = int(len(iacs) * 0.01)
+    n = int(len(iacs) * 0.25)
     iacs_rsample = iacs.sample(n=n, random_state=1)
     # iacs_rsample.to_file(r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\all_predictors_sqr_sub.shp")
     iacs_rsample["treatment"] = 1
@@ -150,15 +150,14 @@ def draw_sample_with_matched_distributions(iacs_pth, out_pth):
     ## treatment == 1 --> comes from sample
     df = pd.concat([iacs_rsample, iacs_red])
     print("Length of combined df:", len(df))
-    # compare_distributions_of_variables(
-    #     df=df,
-    #     hue_col="treatment",
-    #     hue_dict={0: "reduced dataset", 1: "random sample"},
-    #     out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\matching\02_comparison_random_sample_with_reduced_df.png"
-    # )
+    compare_distributions_of_variables(
+        df=df,
+        hue_col="treatment",
+        hue_dict={0: "reduced dataset", 1: "random sample"},
+        out_pth=fr"{out_folder}\02_comparison_random_sample_with_reduced_df.png"
+    )
 
     ## 3. Match reduced dataset with random sample to get a sample with similar distributions in all variables
-    txt_pth = rf"Q:\FORLand\Field_farm_size_relationship\data\vector\final\matching\matching.txt"
     with open(txt_pth, 'w') as f:
         f.write(f"##### Matching #####\n")
     f.close()
@@ -288,7 +287,7 @@ def draw_sample_with_matched_distributions(iacs_pth, out_pth):
         df=df_plt,
         hue_col="treatment",
         hue_dict={1: "random sample", 0: "matched sample", 2: "full dataset"},
-        out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\vector\final\matching\03_comparison_random_sample_with_matched_sample.png"
+        out_pth=rf"{out_folder}\03_comparison_random_sample_with_matched_sample.png"
     )
 
     ## Add information on matched sample to final dataset
@@ -299,39 +298,7 @@ def draw_sample_with_matched_distributions(iacs_pth, out_pth):
     # print(len(iacs.loc[(iacs["matched_sample"] == 1) & (iacs["na"] == 1)]))
     # print(len(iacs.loc[(iacs["matched_sample"] == 1) & (iacs["na"] == 0)]))
 
-    ## Reclassify ID_KTYP
-    t_dict = {
-        "MA": "MA",  # maize --> maize
-        "WW": "CE",  # winter wheat --> cereals
-        "SU": "SU",  # sugar beet --> sugar beet
-        "OR": "OR",  # oilseed rape --> oilseed rape
-        "PO": "PO",  # potato --> potatoes
-        "SC": "CE",  # summer cereals --> cereals
-        "TR": "CE",  # triticale --> cereals
-        "WB": "CE",  # winter barely --> cereals
-        "WR": "CE",  # winter rye --> cereals
-        "LE": "LE",  # legumes  --> legumes
-        "AR": "GR",  # arable grass --> grass
-        "GR": "GR",  # permanent grassland --> grass
-        "FA": "OT",  # unkown --> others
-        "PE": "OT",  # 40-mehrjährige Kulturen und Dauerkulturen --> others
-        "UN": "OT",  # unkown --> others
-        "GA": "OT",  # garden flowers --> others
-        "MI": "OT",  # mix --> others
-    }
-
-    iacs["new_IDKTYP"] = iacs["ID_KTYP"].map(t_dict)
     iacs.drop(columns=["na"], inplace=True)
-
-    ## Reorder columns
-    iacs = iacs[['field_id', 'farm_id', 'field_size', 'fieldSizeM', 'farm_size', 'fieldCount', 'crop_name',
-       'ID_KTYP', 'new_IDKTYP', 'federal_st', 'FormerDDRm',
-       'hexa_id', 'sumAgr1000', 'propAg1000', 'ElevationA', 'sdElev0',
-       'avgTRI0', 'avgTRI500',  'avgTRI1000', 'SQRAvrg',
-       'surrf_mean', 'surrf_median', 'surrf_std', 'surrf_min', 'surrf_max',
-       'surrf_no_fields', 'matched_sample', 'geometry']]
-
-    iacs.to_file(r"Q:\FORLand\Field_farm_size_relationship\data\test_run2\all_predictors_w_grassland.shp")
 
     ## Create smaller version of shapefile
     iacs = iacs[['field_id', 'farm_id', 'fieldSizeM', 'farm_size', 'fieldCount', 'ID_KTYP', 'new_IDKTYP', 'federal_st',
@@ -340,6 +307,11 @@ def draw_sample_with_matched_distributions(iacs_pth, out_pth):
                  'matched_sample', 'geometry']]
     iacs.to_file(r"Q:\FORLand\Field_farm_size_relationship\data\test_run2\all_predictors_w_grassland_red.shp")
 
+    ## Reorder columns
+    iacs = iacs[['field_id', 'matched_sample']]
+
+    iacs.to_file(matched_field_ids_out_pth)
+
 ## ------------------------------------------ RUN PROCESSES ---------------------------------------------------#
 def main():
     s_time = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())
@@ -347,8 +319,10 @@ def main():
     os.chdir(WD)
 
     draw_sample_with_matched_distributions(
-        iacs_pth=r"Q:\FORLand\Field_farm_size_relationship\data\test_run2\all_predictors_w_grassland\all_predictors_w_grassland.shp",
-        out_pth=r"Q:\FORLand\Field_farm_size_relationship\data\test_run2\matched_sample_w_grassland.shp"
+        iacs_pth=r"data/test_run2/all_predictors_w_grassland_w_additional_surrf.csv",
+        txt_pth=rf"data\tables\matching\matching.txt",
+        out_folder=r"data\tables\matching",
+        out_pth=r"data\test_run2\matched_sample_w_grassland.shp"
     )
 
 

@@ -1,3 +1,5 @@
+import os
+
 import geopandas as gpd
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -5,6 +7,176 @@ import seaborn as sns
 import plotting_lib
 import numpy as np
 import warnings
+import time
+import statsmodels.api as sm
+
+def farm_field_regression_in_hexagons(hex_shp, iacs, hexa_id_col, farm_id_col, field_id_col=None, field_size_col=None,
+                                      farm_size_col=None, log_x=False, log_y=False, reduce_farm_size=True):
+    print("Farm vs. field size regression.")
+
+    ## Calculate centroids of fields to assign each field to a hexagon based on the centroid location
+    print("\tAssign fields to hexagons.")
+    iacs["centroids"] = iacs["geometry"].centroid
+    if field_id_col:
+        iacs.rename(columns={field_id_col: "field_id"}, inplace=True)
+    else:
+        iacs["field_id"] = iacs.index + 1
+    centroids = iacs[["field_id", "centroids"]].copy()
+    centroids.rename(columns={"centroids": "geometry"}, inplace=True)
+    ## Create a centroids layer and add the hex id to the centroids
+    centroids = gpd.GeoDataFrame(centroids, crs=3035)
+    centroids = gpd.sjoin(centroids, hex_shp, how="left")
+
+    ## Add hexagon id to iacs data by joining the centroids values with the
+    iacs = pd.merge(iacs, centroids[["field_id", hexa_id_col]], how="left", on="field_id")
+
+    ## Calculate field and farm sizes if not already provided
+    print("\tDetermine field and farm sizes.")
+    if field_size_col:
+        iacs.rename(columns={field_size_col: "field_size"}, inplace=True)
+    else:
+        iacs["field_size"] = iacs["geometry"].area / 10000
+
+    if farm_size_col:
+        iacs.rename(columns={farm_size_col: "farm_size"}, inplace=True)
+    else:
+        farm_sizes = iacs.groupby(farm_id_col).agg(
+            farm_size=pd.NamedAgg(column="field_size", aggfunc="sum")
+        ).reset_index()
+        iacs = pd.merge(iacs, farm_sizes, on=farm_id_col, how="left")
+
+    # test for number of farm sizes per farm id
+    t = iacs.groupby("farm_id").agg(
+        n_farm_sizes=pd.NamedAgg("farm_size", "nunique")
+    ).reset_index()
+    t2 = t.loc[t["n_farm_sizes"] > 1].copy()
+    if not t2.empty:
+        warnings.warn("There are cases of farm_id's that have multiple farm sizes!")
+
+    if reduce_farm_size:
+        iacs["farm_size"] = iacs["farm_size"] - iacs["field_size"]
+
+    ## Calculate regression explaining farm sizes with field sizes
+    # print("\tCalculate the regression.")
+    # def calc_regression(group, log_x=log_x, log_y=log_y):
+    #     group = pd.DataFrame(group)
+    #     group = group.loc[group["farm_size"] > 0].copy()
+    #
+    #     if group.empty:
+    #         return (np.nan, np.nan, np.nan, np.nan)
+    #
+    #     if log_x:
+    #         group['field_size'] = np.log(group['field_size'])
+    #     if log_y:
+    #         group['farm_size'] = np.log(group['farm_size'])
+    #
+    #     # group.to_csv(r"C:\Users\IAMO\OneDrive - IAMO\2022_12 - Field vs farm sizes\data\tables\test2.csv")
+    #
+    #     x = np.array(group["field_size"])
+    #     y = np.array(group["farm_size"]).T
+    #
+    #     x = sm.add_constant(x)
+    #     model = sm.OLS(y, x)
+    #     estimation = model.fit()
+    #
+    #     if len(estimation.params) > 1:
+    #         slope = estimation.params[1]
+    #         intercept = estimation.params[0]
+    #         rsquared = estimation.rsquared
+    #     else:
+    #         slope = 0
+    #         intercept = 1
+    #         rsquared = 0
+    #
+    #     return (intercept, slope, len(x), rsquared)
+
+    ## Check whats wrong with some cases
+    # group = iacs.loc[iacs[hexa_id_col] == 67].copy()
+    # t = iacs.loc[iacs["field_id"] == "LS_8844", "farm_id"].iloc[0]
+    # s = iacs.loc[iacs["farm_id"] == t].copy() #--> turns out we have to filter out farms with one field
+
+    # ## turn ha into sqm
+    # iacs["farm_size"] = iacs["farm_size"] * 10000
+    # iacs["field_size"] = iacs["field_size"] * 10000
+    #
+    # model_results = iacs.groupby(hexa_id_col).apply(calc_regression).reset_index()
+    # model_results.columns = [hexa_id_col, "model_results"]
+    # model_results["intercept"] = model_results["model_results"].apply(lambda x: x[0])
+    # model_results["slope"] = model_results["model_results"].apply(lambda x: x[1])
+    # model_results["num_fields"] = model_results["model_results"].apply(lambda x: x[2])
+    # model_results["rsquared"] = model_results["model_results"].apply(lambda x: x[3])
+    # model_results.drop(columns=["model_results"], inplace=True)
+
+    mean_sizes = iacs.groupby(hexa_id_col).agg(
+        avgfarm_s=pd.NamedAgg(column="farm_size", aggfunc="mean"),
+        avgfield_s=pd.NamedAgg(column="field_size", aggfunc="mean"),
+        num_farms=pd.NamedAgg(column=farm_id_col, aggfunc="nunique"),
+        num_fields=pd.NamedAgg(column=field_id_col, aggfunc="nunique")
+    ).reset_index()
+    # mean_sizes["num_farms"] = mean_sizes["num_farms"].apply(lambda x: len(set(x)))
+
+    ## Add hexagon geometries to model results
+    # model_results = pd.merge(model_results, mean_sizes, how="left", on=hexa_id_col)
+    # model_results = pd.merge(model_results, hex_shp, how="left", on=hexa_id_col)
+
+    model_results = pd.merge(mean_sizes, hex_shp, how="left", on=hexa_id_col)
+    model_results = gpd.GeoDataFrame(model_results)
+
+    return model_results
+
+def plot_field_farm_sizes_numbers_in_hexagon_grid():
+    key = "ALL"
+    pth = fr"data\vector\IACS\IACS_{key}_2018_cleaned.gpkg"
+    # iacs = gpd.read_file(pth)
+    #
+    # ## Predict farm sizes based on field sizes for different hexagons layed over the study region
+    # for hexasize in [15]:  # 30, 15,
+    #     hexagon_pth = fr"data\vector\grid\hexagon_grid_germany_{hexasize}km_3035.shp"
+    #     hex_shp = gpd.read_file(hexagon_pth)
+    #     hex_shp.rename(columns={"id": "hexa_id"}, inplace=True)
+    #     model_results_shp = farm_field_regression_in_hexagons(
+    #         hex_shp=hex_shp,
+    #         iacs=iacs,
+    #         hexa_id_col="hexa_id",
+    #         farm_id_col="farm_id",
+    #         field_id_col="field_id",
+    #         field_size_col="field_size",
+    #         farm_size_col="farm_size",
+    #         log_x=False,
+    #         log_y=False,
+    #         reduce_farm_size=False
+    #     )
+    #     pth = fr"data\vector\grid\hexagon_grid_{key}_{hexasize}km_with_values.shp"
+    #     model_results_shp.to_file(pth)
+
+    ## Plot the modelling results as maps
+    for hexasize in [15]:
+        print("Read hexagon shapefile")
+        pth = fr"data\vector\grid\hexagon_grid_{key}_{hexasize}km_with_values.shp"
+        model_results_shp = gpd.read_file(pth)
+        model_results_shp.replace([np.inf, -np.inf], np.nan, inplace=True)
+        # model_results_shp.dropna(subset=["rsquared"], how="all", inplace=True)
+        model_results_shp = model_results_shp[model_results_shp["num_farms"] > 1].copy()
+        if hexasize == 1:
+            dpi = 600
+            figsize = (40, 24)
+        else:
+            dpi = 300
+            figsize = (16, 7)
+
+        plotting_lib.plot_maps_in_grid(
+            shp=model_results_shp,
+            out_pth=fr"figures\field_farm_sizes_hexagons\{key}_num_farms_fields+sizes_{hexasize}km.png",
+            cols=["num_farms", "num_fields", "avgfield_s", "avgfarm_s"],
+            nrow=1,
+            ncol=4,
+            figsize=figsize,
+            dpi=dpi,
+            shp2_pth=fr"data\vector\administrative\GER_bundeslaender.shp",
+            shp3_pth=fr"data\vector\administrative\vg-hist.utm32s.shape\daten\utm32s\shape\VG-Hist_1989-12-31_STA.shp",
+            titles=["No. Farms", "No. Fields", "Mean Field Size [ha]", "Mean Farm Size [ha]"],
+            highlight_extremes=False
+        )
 
 def create_summary_statistics():
     shp = gpd.read_file(r"Q:\FORLand\Field_farm_size_relationship\data\vector\IACS\IACS_ALL_2018_with_grassland_recl_3035.shp")
@@ -298,8 +470,9 @@ def explore_grasslands(iacs, field_id_col, field_size_col, farm_id_col, farm_siz
     print("Done!")
 
 
-def explore_field_sizes(iacs, farm_id_col, field_id_col, field_size_col, farm_size_col, crop_class_col):
+def explore_field_sizes(iacs, farm_id_col, field_id_col, field_size_col, farm_size_col, crop_class_col, out_folder):
     print("Explore field sizes.")
+
     ## Derive federal state from field id
     federal_state_col = "federal_state"
     iacs[federal_state_col] = iacs[field_id_col].apply(lambda x: x.split("_")[0])
@@ -354,31 +527,31 @@ def explore_field_sizes(iacs, farm_id_col, field_id_col, field_size_col, farm_si
     # fig.tight_layout()
 
     ## Plot farm size vs maximum and minimum field size ratio
-    fig, axs = plt.subplots()
-    sns.scatterplot(data=farms, x="farm_size", y="max_field_ratio", s=3, ax=axs)
-    sns.scatterplot(data=farms, x="farm_size", y="min_field_ratio", s=3, ax=axs)
-    axs.set_xlabel("Farm size [ha]")
-    axs.set_ylabel("ratio of max. (blue) and min. (orange) field sizes")
-    fig.tight_layout()
-    plt.savefig(fr"figures\scatterplot_max+min_field_ratios_with_grassland.png")
-    plt.close()
-
-    ## Plot minimum and maximum field sizes per farm size class in boxplots
-    fig, axs = plt.subplots(nrows=1, ncols=2, figsize=plotting_lib.cm2inch((16, 6)))
-    sns.boxplot(data=farms, x="farm_size_class", y="min_field_size", showfliers=False, ax=axs[1])
-    axs[1].set_xlabel("Deciles of farm sizes")
-    axs[1].set_ylabel("Min. field size [ha]")
-    axs[1].set_title("b)", loc="left")
-    axs[1].grid(visible=True, which="major", axis="y", zorder=0)
-    axs[1].set_axisbelow(True)
-    sns.boxplot(data=farms, x="farm_size_class", y="max_field_size", showfliers=False, ax=axs[0])
-    axs[0].set_xlabel("Deciles of farm sizes")
-    axs[0].set_ylabel("Max. field size [ha]")
-    axs[0].set_title("a)", loc="left")
-    axs[0].grid(visible=True, which="major", axis="y", zorder=0)
-    axs[0].set_axisbelow(True)
-    fig.tight_layout()
-    plt.savefig(fr"figures\boxplot_min_max_field_sizes_per_farm_decile_with_grassland.png")
+    # fig, axs = plt.subplots()
+    # sns.scatterplot(data=farms, x="farm_size", y="max_field_ratio", s=3, ax=axs)
+    # sns.scatterplot(data=farms, x="farm_size", y="min_field_ratio", s=3, ax=axs)
+    # axs.set_xlabel("Farm size [ha]")
+    # axs.set_ylabel("ratio of max. (blue) and min. (orange) field sizes")
+    # fig.tight_layout()
+    # plt.savefig(fr"{out_folder}\scatterplot_max+min_field_ratios_with_grassland.png")
+    # plt.close()
+    #
+    # ## Plot minimum and maximum field sizes per farm size class in boxplots
+    # fig, axs = plt.subplots(nrows=1, ncols=2, figsize=plotting_lib.cm2inch((16, 6)))
+    # sns.boxplot(data=farms, x="farm_size_class", y="min_field_size", showfliers=False, ax=axs[1])
+    # axs[1].set_xlabel("Deciles of farm sizes")
+    # axs[1].set_ylabel("Min. field size [ha]")
+    # axs[1].set_title("b)", loc="left")
+    # axs[1].grid(visible=True, which="major", axis="y", zorder=0)
+    # axs[1].set_axisbelow(True)
+    # sns.boxplot(data=farms, x="farm_size_class", y="max_field_size", showfliers=False, ax=axs[0])
+    # axs[0].set_xlabel("Deciles of farm sizes")
+    # axs[0].set_ylabel("Max. field size [ha]")
+    # axs[0].set_title("a)", loc="left")
+    # axs[0].grid(visible=True, which="major", axis="y", zorder=0)
+    # axs[0].set_axisbelow(True)
+    # fig.tight_layout()
+    # plt.savefig(fr"{out_folder}\boxplot_min_max_field_sizes_per_farm_decile_with_grassland.png")
 
     ## Calculate area of crop classes in total and per federal state
     crop_classes = iacs[[crop_class_col, federal_state_col, field_size_col]].groupby([crop_class_col, federal_state_col]).agg(
@@ -417,7 +590,7 @@ def explore_field_sizes(iacs, farm_id_col, field_id_col, field_size_col, farm_si
     axs[1].grid(visible=True, which="major", axis="y", zorder=0)
     axs[1].set_axisbelow(True)
     fig.tight_layout()
-    plt.savefig(fr"figures\boxplots_field_and_farm_sizes_per_crop_class.png")
+    plt.savefig(fr"{out_folder}\boxplots_field_and_farm_sizes_per_crop_class.png")
 
     crop_names = list(iacs[crop_class_col].unique())
     iacs["farm_size_r"] = iacs["farm_size"] - iacs["field_size"]
@@ -425,57 +598,81 @@ def explore_field_sizes(iacs, farm_id_col, field_id_col, field_size_col, farm_si
     iacs["log_field_size"] = np.log(iacs[field_size_col])
     iacs["log_farm_size_r"] = np.log(iacs["farm_size_r"])
 
-    fig, axs = plt.subplots(nrows=4, ncols=4, figsize=plotting_lib.cm2inch((32, 32)))
-    for cn, ax in zip(crop_names, axs.ravel()):
-        sub = iacs.loc[iacs[crop_class_col] == cn].copy()
-        sns.scatterplot(data=sub, x="log_field_size", y="log_farm_size", s=3, ax=ax)
-        ax.set_title(cn.upper())
-        ax.set_xlabel("Log field size")
-        ax.set_ylabel("Log farm size")
-    fig.tight_layout()
-    plt.savefig(fr"figures\scatter_log_field_vs_log_farm_sizes_per_crop_class.png")
+    fontsize = 16
+    plt.rcParams['font.size'] = fontsize
+    plt.rcParams['font.family'] = 'sans-serif'
+    plt.rcParams['font.sans-serif'] = ['Calibri']
 
-    fig, axs = plt.subplots(nrows=4, ncols=4, figsize=plotting_lib.cm2inch((32, 32)))
+    fig, axs = plt.subplots(nrows=2, ncols=4, sharex=True, sharey=True, figsize=(16, 10))
     for cn, ax in zip(crop_names, axs.ravel()):
         sub = iacs.loc[iacs[crop_class_col] == cn].copy()
-        sns.scatterplot(data=sub, x="log_field_size", y="log_farm_size_r", s=3, ax=ax)
-        ax.set_title(cn.upper())
-        ax.set_xlabel("Log field size")
-        ax.set_ylabel("Log farm size r")
+        sns.regplot(data=sub, x="log_field_size", y="log_farm_size", ax=ax, ci=99,
+                    line_kws=dict(color="black"), scatter_kws={'s': 0.5, 'color': 'grey'})
+        ax.set_title(str(cn).upper())
+
+        ax.set_xlabel("")
+        ax.set_ylabel("")
+
+    # Set shared x and y labels for the entire figure
+    fig.text(0.5, 0.01, 'Log field size', ha='center', va='center')
+    fig.text(0.01, 0.5, 'Log farm size', ha='center', va='center', rotation='vertical')
+
     fig.tight_layout()
-    plt.savefig(fr"figures\scatter_log_field_vs_log_rest_farm_sizes_per_crop_class.png")
+    plt.savefig(fr"{out_folder}\scatter_log_field_vs_log_farm_sizes_per_crop_class.png")
+    plt.close()
+
+    fig, axs = plt.subplots(nrows=2, ncols=4, sharex=True, sharey=True, figsize=(16, 10))
+    for cn, ax in zip(crop_names, axs.ravel()):
+        sub = iacs.loc[iacs[crop_class_col] == cn].copy()
+        sns.regplot(data=sub, x="log_field_size", y="log_farm_size_r", ax=ax, ci=99,
+                    line_kws=dict(color="black"), scatter_kws={'s': 0.5, 'color': 'grey'})
+        ax.set_title(str(cn).upper())
+
+        ax.set_xlabel("")
+        ax.set_ylabel("")
+
+    # Set shared x and y labels for the entire figure
+    fig.text(0.5, 0.01, 'Log field size', ha='center', va='center')
+    fig.text(0.01, 0.5, 'Log farm size reduced', ha='center', va='center', rotation='vertical')
+
+    fig.tight_layout()
+    plt.savefig(fr"{out_folder}\scatter_log_field_vs_log_rest_farm_sizes_per_crop_class.png")
+    plt.close()
 
     print("done!")
 
 
 def main():
-    create_summary_statistics()
+    s_time = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())
+    print("start: " + s_time)
 
-    # pth = fr"data\vector\IACS\IACS_{key}_2018_new.shp"
-    # iacs = gpd.read_file(pth)
+    os.chdir(r"Q:\FORLand\Field_farm_size_relationship")
+
+    print("Read IACS data.")
+    key = "ALL"
+    pth = fr"data\vector\IACS\IACS_ALL_2018_cleaned.gpkg"
+    iacs = gpd.read_file(pth)
+
+    # create_summary_statistics()
+
+    # plot_field_farm_sizes_numbers_in_hexagon_grid()
+
+    # iacs = gpd.read_file(fr"data\vector\IACS\IACS_ALL_2018_with_grassland_recl.shp")
+    # explore_grasslands(
+    #     iacs=iacs,
+    #     farm_id_col="farm_id",
+    #     field_id_col="field_id",
+    #     field_size_col="field_size",
+    #     farm_size_col="farm_size",
+    #     out_pth=r"data\tables\grassland_statistics.xlsx"
+    # )
+
     # explore_farm_distribution_across_states(
     #     iacs=iacs,
-    #     shp_out_pth=r"data\vector\IACS\IACS_2018_farms_in_multiple_states_no_grassland.shp",
-    #     csv_out_pth=fr"data\tables\farm_distribution_across_states_no_grassland.csv",
-    #     plt_out_pth=r"figures\share_of_farm_outside_main_state_no_grassland.png")
-
-    iacs = gpd.read_file(fr"data\vector\IACS\IACS_ALL_2018_with_grassland_recl.shp")
-    explore_grasslands(
-        iacs=iacs,
-        farm_id_col="farm_id",
-        field_id_col="field_id",
-        field_size_col="field_size",
-        farm_size_col="farm_size",
-        out_pth=r"data\tables\grassland_statistics.xlsx"
-    )
-
-    explore_farm_distribution_across_states(
-        iacs=iacs,
-        shp_out_pth=r"data\vector\IACS\IACS_2018_farms_in_multiple_states.shp",
-        csv_out_pth=fr"data\tables\farm_distribution_across_states.csv",
-        plt_out_pth=r"figures\share_of_farm_outside_main_state_png"
-    )
-
+    #     shp_out_pth=r"data\vector\IACS\IACS_2018_farms_in_multiple_states.shp",
+    #     csv_out_pth=fr"data\tables\farm_distribution_across_states.csv",
+    #     plt_out_pth=r"figures\share_of_farm_outside_main_state_png"
+    # )
 
     explore_field_sizes(
         iacs=iacs,
@@ -483,22 +680,28 @@ def main():
         field_id_col="field_id",
         field_size_col="field_size",
         farm_size_col="farm_size",
-        crop_class_col="ID_KTYP"
+        crop_class_col="ID_KTYP",
+        out_folder=r"figures\advanced_exploration_field_to_farm_size",
     )
 
     # Get some basic statistics
-    iacs["fstate"] = iacs["field_id"].apply(lambda x: x.split('_')[0])
-    df_stat = iacs.groupby("fstate").agg(
-        area=pd.NamedAgg(column="field_size", aggfunc="sum"),
-        num_fields=pd.NamedAgg(column="field_id", aggfunc="count"),
-        num_farms=pd.NamedAgg(column="farm_id", aggfunc=list)
-    ).reset_index()
-    df_stat["num_farms"] = df_stat["num_farms"].apply(lambda x: len(set(x)))
-    df_stat["mean_field_size"] = df_stat["area"] / df_stat["num_fields"]
-    df_stat["mean_farm_size"] = df_stat["area"] / df_stat["num_farms"]
+    # iacs["fstate"] = iacs["field_id"].apply(lambda x: x.split('_')[0])
+    # df_stat = iacs.groupby("fstate").agg(
+    #     area=pd.NamedAgg(column="field_size", aggfunc="sum"),
+    #     num_fields=pd.NamedAgg(column="field_id", aggfunc="count"),
+    #     num_farms=pd.NamedAgg(column="farm_id", aggfunc=list)
+    # ).reset_index()
+    # df_stat["num_farms"] = df_stat["num_farms"].apply(lambda x: len(set(x)))
+    # df_stat["mean_field_size"] = df_stat["area"] / df_stat["num_fields"]
+    # df_stat["mean_farm_size"] = df_stat["area"] / df_stat["num_farms"]
+    #
+    # df_stat.to_csv(r"data\tables\general_stats.csv", index=False)
+    # print("Done calculating general statistics.")
 
-    df_stat.to_csv(r"data\tables\general_stats.csv", index=False)
-    print("Done calculating general statistics.")
+    e_time = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())
+    print("start: " + s_time)
+    print("end: " + e_time)
+
 
 if __name__ == '__main__':
     main()
