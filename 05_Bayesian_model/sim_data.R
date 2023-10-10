@@ -7,7 +7,9 @@ library(ggplot2)
 fs_sim <- runif(10000, 1, 200) 
 
 # assign random farm IDs
-farm_id <- rnorm(10000, 100, 700) %>% round(0)
+farm_id <- rnorm(10000, 100, 200) %>% round(0)
+
+
 #farm_id <- runif(10000, 1, 100) %>% round(0)
 
 farm_id %>% unique() %>% length()

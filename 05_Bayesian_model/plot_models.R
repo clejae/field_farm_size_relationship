@@ -1,3 +1,10 @@
+getmode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+
+
 # Create new data
 
 plot_model <- model_surrf_lognorm_7_full
@@ -26,8 +33,8 @@ newdata$new_IDKTYP <- as.factor(newdata$new_IDKTYP)
 
 range(df$field_size*0.0001)
 
-fs_ha = 50
-crop_t = 'CE'
+fs_ha = 1
+crop_t = 'OT'
 state = 'BV'
 grouped_test <- df %>% group_by(federal_st, new_IDKTYP) %>% summarise(med=median(farm_size_ha), 
                                                       q1 = quantile(farm_size_ha, 0.1), 
@@ -45,7 +52,15 @@ posterior_predict(plot_model, newdata = data.frame(log_field_size=fs_tranlated, 
                                                    federal_st=state), ndraws = 200) %>%
   quantile(., probs=c(0.1, 0.5, 0.9)) + fs_ha
 
-mean(df_full$fieldSizeM) * 0.0001
+test <- posterior_predict(plot_model, newdata = data.frame(log_field_size=fs_tranlated,  #
+                                                   FormerDDRmember=as.factor(1),
+                                                   avgTRI1000 = max(df$avgTRI1000),
+                                                   propAg1000 = max(df$propAg1000),
+                                                   SQRAvrg = max(df$SQRAvrg),
+                                                   new_IDKTYP = as.factor(crop_t),
+                                                   surrf_mean_log = mean(df$surrf_mean_log),
+                                                   federal_st=state), ndraws = 2000) %>% as.data.frame()
+
 ################################################################################
 # Field size label translator
 # TODO find better breaks
@@ -102,7 +117,7 @@ for(crop in unique(newdata$new_IDKTYP)){
   }
 }
 
-
+################################################################################
 
 crop_type = 'GR'
 DDR = 1
@@ -307,27 +322,52 @@ dev.off()
 
 summary(model_surrf_lognorm_7)
 
-jpeg("05_Bayesian_model/figures/figures/fixed_eff_fs.jpeg", 
+range(df_sample_large$surrf_mean)
+
+plotto <- conditional_effects(model_surrf_lognorm_7_full, effects='log_field_size') 
+
+jpeg("05_Bayesian_model/figures/fixed_eff_fs.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
      type = "cairo")
-plotto <- plot(conditional_effects(model_surrf_lognorm_7_full, effects='log_field_size'), points = TRUE) 
-plotto$log_field_size + scale_x_continuous(breaks = x_ref, labels = fs_label_list) + 
-  xlab('field size in ha') + ylab('farm size in ha')
+ggplot(data = df, aes(log_field_size, farm_size_ha)) + 
+  geom_point(alpha=0.051) + 
+  stat_density_2d(aes(fill = after_stat(level)), 
+                         geom = "polygon", contour = TRUE, bins=200) + 
+  scale_fill_distiller(palette = 5, direction = 1) +
+  
+  theme_classic() +
+  scale_x_continuous(breaks = x_ref, labels = fs_label_list, limits=c(-6, 4)) + 
+    geom_ribbon(data = plotto$log_field_size,
+                aes(x = log_field_size, ymin = lower__, ymax = upper__), alpha = 0.5, fill='brown1') +
+  geom_line(data=plotto$log_field_size, aes(x=effect1__, y=estimate__), col='black', 
+            linewidth=1) +
+  xlab('field size in ha') + ylab('farm size in ha') +
+  guides(fill=guide_legend(title="density"))
 dev.off()
 
 
-
+plotto <- conditional_effects(model_surrf_lognorm_7_full, effects='surrf_mean_log') 
 
 jpeg("05_Bayesian_model/figures/fixed_eff_surfs.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
      type = "cairo")
-plotto <- plot(conditional_effects(model_surrf_lognorm_7_full, effects='surrf_mean_log'), points = TRUE) 
-plotto$surrf_mean_log + scale_x_continuous(breaks = x_ref_surrf, labels = fs_surff_label_list) +
-  xlab('surrounding field size in ha') + ylab('farm size in ha')
+ggplot(data = df, aes(surrf_mean_log, farm_size_ha)) + 
+  geom_point(alpha=0.051) + 
+  stat_density_2d(aes(fill = after_stat(level)), 
+                  geom = "polygon", contour = TRUE, bins=200) + 
+  scale_fill_distiller(palette = 5, direction = 1) +
+  theme_classic() +
+  geom_ribbon(data = plotto$surrf_mean_log,
+              aes(x = surrf_mean_log, ymin = lower__, ymax = upper__), alpha = 0.5, fill='brown1') +
+  geom_line(data=plotto$surrf_mean_log, aes(x=effect1__, y=estimate__), col='black', 
+            linewidth=1) + 
+ scale_x_continuous(breaks = x_ref_surrf, labels = fs_surff_label_list, limits = c(-6, 6)) 
+  xlab('surrounding field size in ha') + ylab('farm size in ha') +
+  guides(fill=guide_legend(title="density"))
 dev.off()
 
 ################################################################################
@@ -369,22 +409,96 @@ ggplot(data = newdata %>% filter(federal_st == federal_st_select) , aes((log_fie
 ################################################################################
 # 
 plot_model <- model_surrf_lognorm_7
-post_pred <- as.data.frame(posterior_predict(plot_model, ndraws = 2))
+post_pred <- as.data.frame(posterior_predict(plot_model, ndraws = 1))
+plot(post_pred)
+post_pred_vector_1 <- apply(post_pred, 2, median) %>% c()
+post_pred_vector_2 <- apply(post_pred, 2, sample, 1) %>% c()
 
-post_pred_vector <- apply(post_pred, 2, median) %>% c()
 
 ref_data <- plot_model$data$farm_size_ha
-df_qq <- data.frame(ref=ref_data, pred=runif(min=0, max=1000, n=length(ref_data))) #post_pred_vector
+df_qq <- data.frame(ref=ref_data, pred=post_pred_vector_1) #post_pred_vector
 df_qq$resid <- df_qq$ref - df_qq$pred
 df_qq$fs <- plot_model$data$log_field_size
+# 3168604= median
+sum(abs(df_qq$resid))
 
-abs(sum(df_qq$resid))
+R2 <- 1 -( sum(df_qq$resid^2, na.rm=TRUE) /sum((df_qq$ref - mean(df_qq$ref)^2)))
+R2
+
 
 ggplot(df_qq, aes(ref, pred)) + geom_point() + 
-  xlim(0, 6000) + ylim(0, 6000)
+  xlim(0, 6000) + ylim(0, 6000) #+ geom_density_2d_filled()
 
 gathered <- df_qq %>% gather(., key="key", value="value", -resid, -fs)
 ggplot(gathered, aes(fs, value, col=as.factor(key))) + geom_point(alpha=0.6) +
-  ylim(0, 6000) + facet_wrap(~as.factor(key))
+  ylim(0, 6000) + facet_wrap(~as.factor(key)) 
+
+
+
+
+################################################################################
+# TODO Klassen predicten mit den Klassen aus Figure 10 !!!!!!!
+# TODO model selection beschreiben
+
+plot_model <- model_surrf_lognorm_7_full
+post_pred <- as.data.frame((posterior_predict(plot_model, ndraws = 2000)))
+
+post_pred_vector_1 <- apply(post_pred, 2, getmode) %>% c() 
+#post_pred_vector_2 <- apply(post_pred, 2, sample, 1) %>% c()
+
+
+ref_data <- plot_model$data$farm_size_ha
+#df_qq <- data.frame(ref=ref_data, pred=post_pred_vector_1) #post_pred_vector
+#df_qq$resid <- df_qq$ref - df_qq$pred
+#df_qq$fs <- plot_model$data$log_field_size
+
+farm_size_cl <- c(0, 5, 10, 20, 50, 100, 200, 500, 7000, Inf)
+
+empty_df <- apply(post_pred, 2, cut,  breaks = farm_size_cl, labels = FALSE)
+
+ref_data <- plot_model$data$farm_size_ha
+ref_data <- cut(ref_data, breaks = farm_size_cl, labels = FALSE)
+pred_median <- cut(post_pred_vector_1, breaks = farm_size_cl, labels = FALSE)
+which(ref_data == 2) %>% length()
+modes <- apply(empty_df, 2, getmode) %>% c()
+post_pred_vector_1[which(post_pred_vector_1 < 20 & post_pred_vector_1 > 10)]
+modes[2706]
+empty_df[,481670] %>% table()
+df_qq <- data.frame(ref=ref_data, pred_median = pred_median, pred=modes) 
+(df_qq$pred - df_qq$pred_median)
+confusion_matrix <- table(df_qq[,c(1,2)])
+modified_matrix <- cbind(confusion_matrix, "2"=0)
+modified_matrix <- cbind(confusion_matrix, "1"=0)
+
+confusion_matrix <- modified_matrix[, c("1", "2", "3", "4", "5", "6", "7", "8")]
+
+# Convert the confusion matrix to a data frame for easier calculations
+confusion_df <- as.data.frame(confusion_matrix)
+
+# Calculate class-specific accuracies
+class_accuracies <- diag(confusion_matrix) / rowSums(confusion_matrix)
+
+# Calculate overall accuracy
+overall_accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+
+# Print class-specific accuracies
+cat("Class-Specific Accuracies:\n")
+for (i in 1:length(class_accuracies)) {
+  cat("Class", i, "Accuracy:", class_accuracies[i], "\n")
+}
+
+# Print overall accuracy
+cat("Overall Accuracy:", overall_accuracy, "\n")
+
+
+
+
+df_qq$resid <- df_qq$ref - df_qq$pred_median
+df_qq$fs <- plot_model$data$log_field_size
+# 3168604= median
+sum(abs(df_qq$resid))
+
+R2 <- 1 -( sum(df_qq$resid^2, na.rm=TRUE) /sum((df_qq$ref - mean(df_qq$ref)^2)))
+R2
 
 
