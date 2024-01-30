@@ -1,16 +1,23 @@
 df_full <- df
-df_sub_1 <- df_full[-which(is.na(df_full$SQRAvrg)),]
-df_sub_1$farm_size_ha <- (df_sub_1$farm_size * 0.0001) + 1
+df_sub_1 <- df_full
+df_sub_1$farm_size_ha <- df_sub_1$farm_size
+df_sub_1$new_IDKTYP <- df_sub_1$new_ID_KTYP
+df_sub_1 <- df_sub_1[-which(df_sub_1$new_IDKTYP ==''),]
+df_sub_1 <- df_sub_1[-which(is.na(df_sub_1$SQRAvrg)),]
+
+print(unique(df_sub_1$new_IDKTYP))
+
 which(df_sub_1$farm_size == 0) %>% length()
 
-by_par = 10000
+by_par = 1000
 
-for(i in seq(by_par, nrow(df_sub_1), by = by_par)) {
+for(i in seq(by_par, nrow(df_sub_1), by = by_par)) { #nrow(df_sub_1)
   print(i)
   preceding = (i - by_par)+1
   print(paste(preceding, i))
   slicer = preceding:i
-  preds <- posterior_predict(model_surrf_lognorm_7_full, newdata = df_sub_1[slicer, ]) %>% t() %>% as.data.frame()
+  
+  preds <- posterior_predict(model_surrf_lognorm_8_full, newdata = df_sub_1[slicer, ]) %>% t() %>% as.data.frame()
   preds_mean <- apply(preds, 1, median)
   lb_05 <- apply(preds, 1, quantile, probs = 0.05)
   ub_95 <- apply(preds, 1, quantile, probs = 0.95)
@@ -23,8 +30,17 @@ for(i in seq(by_par, nrow(df_sub_1), by = by_par)) {
   df_sub_1[slicer, "preds"] <- preds_mean 
   df_sub_1[slicer, "resid"] <- df_sub_1[slicer, "farm_size_ha"] - preds_mean
 }
-write.csv(df_sub_1, 'preds_full.csv')
+
+df_out <- df_sub_1[,c("field_id", "preds", "lb_05", "ub_95", "resid")]
+write.csv(df_out, 'preds_full_SQR.csv')
 df_sub_1 <- read.csv('preds_full.csv')
+
+
+df_sub_1 %>% sample_frac(0.01) %>% filter(federal_st=='SA') %>%
+  ggplot(., aes(preds, farm_size, col=new_ID_KTYP)) + 
+  geom_point() + xlim(0, 4000) + ylim(0, 4000) +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  facet_wrap(~new_ID_KTYP)
 
 df_sub_1$IQR <- df_sub_1$ub_9 - df_sub_1$lb_1
 df_sub_1 <- df_sub_1 %>% na.omit()
@@ -94,7 +110,7 @@ df_sample_large %>% #filter( federal_st=='TH') %>%
   ggplot(data=., aes(log_farm_size,col = federal_st)) + geom_histogram(bins=50) + facet_wrap( ~new_IDKTYP)
   summarise(med = mean(farm_size_ha))
  
-hist()
+
 
 bayes_R2(model_surrf_lognorm_7, robust=TRUE)
 WAIC(model_surrf_lognorm_7)

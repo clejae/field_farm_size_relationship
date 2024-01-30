@@ -3,7 +3,7 @@ library(ggplot2)
 
 ################################################################################
 # create simulated data 
-# simulate field sizes in hectar
+# simulate field sizes in hectare
 fs_sim <- runif(10000, 1, 200) 
 
 # assign random farm IDs
@@ -40,8 +40,6 @@ ggplot(df_sim, aes((fs), (farm_size))) + geom_point() +
 lm(farm_size ~ fs, data=df_sim) %>% summary()
 
 # -> Positive relationship between the two variables
-
-
 ################################################################################
 # subtracting field size from farm size
 df_sim$farm_size <- df_sim$farm_size - df_sim$fs

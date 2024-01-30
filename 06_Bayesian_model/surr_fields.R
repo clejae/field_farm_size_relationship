@@ -1,15 +1,15 @@
-df_full <- df
+df <- df_sample_sample
 
-df <- df[which(df$matched_sa==TRUE),]
-df <- df[-which(df$fieldSizeM <= 2),]
-df$farm_size_ha <- (df$farm_size * 0.0001) + 1
+#df <- df[which(df$matched_sa==TRUE),]
+#df <- df[-which(df$fieldSizeM <= 2),]
+df$farm_size_ha <- df$farm_size
 
 df$ID_KTYP <- as.factor(df$ID_KTYP)
-df$new_IDKTYP <- as.factor(df$new_IDKTYP)
+df$new_IDKTYP <- as.factor(df$ID_KTYP)
 df$federal_st <- as.factor(df$federal_st)
 #df <- sample_frac(df, 0.3)
-df$farm_size_ha %>% min()
-
+df$farm_size %>% max()
+df$log_surrf_mean
 
 ################################################################################
 # model_surrf_lognorm_2
@@ -17,7 +17,7 @@ df$farm_size_ha %>% min()
 
 prior_1 = c(prior(normal(4.5, 1.1), class = "Intercept"), 
             prior(normal(1, 0.5), class = "b", coef = "log_field_size"), # positive effect assumed
-            prior(normal(1, 0.5), class = "b", coef = "surrf_mean_log"), # positive effect assumed
+            #prior(normal(1, 0.5), class = "b", coef = "log_surrf_mean"), # positive effect assumed
             prior(normal(0, 0.5), class = "b", coef = "propAg1000"), # effect  in both directiosn possible
             prior(normal(0, 0.5), class ='b', coef='avgTRI1000'), # effect  in both directiosn possible
             prior(normal(0, 0.5), class ='b', coef='SQRAvrg'), # effect  in both directiosn possible
@@ -39,7 +39,7 @@ curve(dlnorm(x, meanlog = 1, sdlog = 2), from=0, to=5000)
 # multilevel varying slope of the mean parameter-> "sd", group='federal_st' = normal(1, 1)
 
 model_formula <- bf(farm_size_ha ~ 1 + log_field_size + log_field_size:new_IDKTYP + 
-                      surrf_mean_log + 
+                      log_surrf_mean + 
                       propAg1000 + avgTRI1000 + SQRAvrg + 
                       (1 | federal_st) + (1 | new_IDKTYP),
                     sigma ~ log_field_size + (1 | federal_st))

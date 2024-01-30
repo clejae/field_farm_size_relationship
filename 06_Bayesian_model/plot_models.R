@@ -11,17 +11,18 @@ plot_model <- model_surrf_lognorm_7_full
 federal_st_var <- 'BB'
 df$federal_st
 rep_var = 100
-rep_var_2 = length(unique(df$new_IDKTYP))
+df_sample_large
+rep_var_2 = length(unique(df_sample_large$new_ID_KTYP))
 newdata <- data.frame(log_field_size = rep(seq(min(df$log_field_size),
                                              max(df$log_field_size), 
                                              length.out = rep_var), rep_var_2),
                         FormerDDRmember = rep(1, rep_var),
-                        avgTRI1000 = rep(rep(max(df$avgTRI1000), rep_var), rep_var_2),
-                        propAg1000 = rep(rep(max(df$propAg1000), rep_var), rep_var_2),
-                        SQRAvrg = rep(rep(mean(df$SQRAvrg), rep_var), rep_var_2),
-                        new_IDKTYP = rep(c(unique(df$new_IDKTYP)), each=rep_var),
-                        surrf_mean_log = rep(rep(min(df$surrf_mean_log), rep_var), rep_var_2),
-                        federal_st = as.factor(rep(c(unique(df$federal_st)), each=rep_var*rep_var_2)))
+                        avgTRI1000 = rep(rep(mean(df$avgTRI1000, na.rm=TRUE), rep_var), rep_var_2),
+                        propAg1000 = rep(rep(mean(df$propAg1000, na.rm=TRUE), rep_var), rep_var_2),
+                        SQRAvrg = rep(rep(mean(df$SQRAvrg, na.rm=TRUE), rep_var), rep_var_2),
+                        new_IDKTYP = rep(c(unique(df_sample_large$new_ID_KTYP)), each=rep_var),
+                        log_surrf_mean = rep(rep(min(df$log_surrf_mean), rep_var), rep_var_2),
+                        federal_st = as.factor(rep(c(unique(df_sample_large$federal_st)), each=rep_var*rep_var_2)))
 
 newdata[which(newdata$federal_st == 'BV' |
                 newdata$federal_st == 'LS'), "FormerDDRmember"] = 0
@@ -33,7 +34,7 @@ newdata$new_IDKTYP <- as.factor(newdata$new_IDKTYP)
 
 range(df$field_size*0.0001)
 
-fs_ha = 1
+fs_ha = 10
 crop_t = 'OT'
 state = 'BV'
 grouped_test <- df %>% group_by(federal_st, new_IDKTYP) %>% summarise(med=median(farm_size_ha), 
@@ -48,7 +49,7 @@ posterior_predict(plot_model, newdata = data.frame(log_field_size=fs_tranlated, 
                                                    propAg1000 = max(df$propAg1000),
                                                    SQRAvrg = max(df$SQRAvrg),
                                                    new_IDKTYP = as.factor(crop_t),
-                                                   surrf_mean_log = mean(df$surrf_mean_log),
+                                                   log_surrf_mean = mean(df$log_surrf_mean),
                                                    federal_st=state), ndraws = 200) %>%
   quantile(., probs=c(0.1, 0.5, 0.9)) + fs_ha
 
@@ -58,7 +59,7 @@ test <- posterior_predict(plot_model, newdata = data.frame(log_field_size=fs_tra
                                                    propAg1000 = max(df$propAg1000),
                                                    SQRAvrg = max(df$SQRAvrg),
                                                    new_IDKTYP = as.factor(crop_t),
-                                                   surrf_mean_log = mean(df$surrf_mean_log),
+                                                   log_surrf_mean = mean(df$log_surrf_mean),
                                                    federal_st=state), ndraws = 2000) %>% as.data.frame()
 
 ################################################################################
@@ -67,7 +68,7 @@ test <- posterior_predict(plot_model, newdata = data.frame(log_field_size=fs_tra
 fs_label_list <- c()
 range(df_full$log_field_size)
 x_ref = seq(0, 50, by=10) %>% log()
-x_ref = seq(-6, 4, by=1)
+x_ref = seq(-3, 4, by=1)
 
 for(i in x_ref) {
   print(i)
@@ -80,13 +81,15 @@ for(i in x_ref) {
 # Surrf label_lis
 #range(df_full$surrf_mean)
 fs_surff_label_list <- c()
+range(df_full$log_surrf_mean)
+range(df_full$surrf_mean)
 
-x_ref_surrf = seq(-6, 6, by=1)
-#ange(df_full$surrf_mean_log)
+x_ref_surrf = seq(-5, 6, by=1)
+#ange(df_full$log_surrf_mean)
 for(i in x_ref_surrf) {
   print(i)
   subtractor = 1e-1
-  fs_label <- round(df_full[which((df_full$surrf_mean_log >= i - subtractor) & (df_full$surrf_mean_log <= i + subtractor)), "surrf_mean"], 2)[1]
+  fs_label <- round(df_full[which((df_full$log_surrf_mean >= i - subtractor) & (df_full$log_surrf_mean <= i + subtractor)), "surrf_mean"]*0.0001, 2)[1]
   fs_surff_label_list <- c(fs_surff_label_list, fs_label)
 }
 fs_surff_label_list
@@ -95,7 +98,7 @@ fs_surff_label_list
 
 post_pred <- as.data.frame(posterior_predict(plot_model, newdata = newdata, ndraws = 2000))
 
-newdata$pred <- apply(post_pred, 2, median)
+newdata$pred <- apply(post_pred, 2, median) # median
 newdata$lower_bound1 <- apply(post_pred, 2, quantile, probs = 0.1)
 newdata$upper_bound1 <- apply(post_pred, 2, quantile, probs = 0.9)
 
@@ -144,7 +147,7 @@ ggplot(data = newdata %>% filter(federal_st == federal_st_select) , aes((log_fie
   ylim(0, 700) #+ xlim(-4, 4)
 
 
-jpeg("05_Bayesian_model/figures/predictions_DDR.jpeg", 
+jpeg("06_Bayesian_model/figures/predictions_DDR.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
@@ -157,15 +160,15 @@ ggplot() +
   #           aes(x = log_field_size, y = farm_size_ha),
   #           alpha = 0.2, shape = 21) +
   geom_line(data = newdata %>% filter(FormerDDRmember == DDR),
-            aes(x = log_field_size, y = pred, col = federal_st)) +
+            aes(x = log_field_size, y = pred, col = federal_st), size=1) +
   facet_wrap(~new_IDKTYP) +
   geom_ribbon(data = newdata %>% filter(FormerDDRmember == DDR),
               aes(x = log_field_size, ymin = lower_bound1, ymax = upper_bound1, 
                   col=federal_st),
-              alpha = 0.1) +
+              alpha = 0.1, size=0.4) +
   labs(x = "field size ha", y = "farm size ha", col='state') +
   ggtitle(paste("full model BB, TH, SA")) +
-  ylim(0, 3000) + xlim(-4, 3) +  
+  ylim(0, 4000) + xlim(-4, 3) +  
   scale_x_continuous(breaks = x_ref, labels = fs_label_list) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
   scale_color_manual(values = c("#fc8d59", "#ffffbf", "#91bfdb"))
@@ -173,7 +176,7 @@ ggplot() +
 dev.off()
 
 
-jpeg("05_Bayesian_model/figures/predictions_West.jpeg", 
+jpeg("06_Bayesian_model/figures/predictions_West.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
@@ -185,14 +188,14 @@ ggplot() +
   #           aes(x = log_field_size, y = farm_size_ha),
   #           alpha = 0.2, shape = 21) +
   geom_line(data = newdata %>% filter(FormerDDRmember == DDR),
-            aes(x = log_field_size, y = pred, col = federal_st)) +
+            aes(x = log_field_size, y = pred, col = federal_st), size=1) +
   facet_wrap(~new_IDKTYP) +
   geom_ribbon(data = newdata %>% filter(FormerDDRmember == DDR),
               aes(x = log_field_size, ymin = lower_bound1, ymax = upper_bound1, 
                   col=federal_st),
-              alpha = 0.1) +
+              alpha = 0.1, size=0.4) +
   labs(x = "field size ha", y = "farm size ha", col='state') +
-  ggtitle(paste("full model BB, TH, SA")) +
+  ggtitle(paste("full model BV, LS")) +
   ylim(0, 800) + xlim(-4, 3) +  
   scale_x_continuous(breaks = x_ref, labels = fs_label_list) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
@@ -203,13 +206,22 @@ dev.off()
 
 
 vars_ranef <- ranef(plot_model, summary = FALSE) %>% as.data.frame() %>% c() 
-model_surrf_lognorm_7$fit@mode
+#model_surrf_lognorm_7$fit@mode
 df_ranef <-  as.data.frame(do.call(cbind, vars_ranef)) %>% gather()
 #ggplot(df_ranef %>% filter(grepl("sigma",key)), aes(x=value, col=as.factor(key))) + 
 #  geom_histogram(bins=50) + facet_wrap(~key)
 
 df_ranef$key <- df_ranef$key %>% gsub(patter='federal_st.new_IDKTYP.', replacement = '')
-crop_list <- df$new_IDKTYP %>% unique()
+df_ranef[df_ranef$key %>% grepl(patter='.log_field_size'), "level_type"] <- 'varying slope'
+df_ranef[df_ranef$key %>% grepl(patter='.Intercept'), "level_type"] <- 'varying intercept mu'
+df_ranef[df_ranef$key %>% grepl(patter='sigma'), "level_type"] <- 'varying intercept sigma'
+
+#df_ranef$key <- df_ranef$key %>% gsub(patter='.log_field_size', replacement = '')
+#df_ranef$key <- df_ranef$key %>% gsub(patter='.Intercept', replacement = '')
+#df_ranef$key <- df_ranef$key %>% gsub(patter='.sigma', replacement = '')
+
+#df_ranef$key <- substr(df_ranef$key, 1, 2)
+crop_list <- df_sample$new_ID_KTYP %>% unique()
 for(crop in crop_list) {
   
   df_ranef[str_detect(df_ranef$key, crop), "CropType"] <- crop
@@ -219,9 +231,9 @@ for(state in state_list) {
   
   df_ranef[str_detect(df_ranef$key, state), "State"] <- state
 }
-df_ranef$FormerDDRmember = 'yes'
+df_ranef$FormerDDRmember = 'East Germany'
 df_ranef[which(df_ranef$State == 'BV' |
-                 df_ranef$State == 'LS'), "FormerDDRmember"] = 'no'
+                 df_ranef$State == 'LS'), "FormerDDRmember"] = 'West Germany'
 
 df_ranef$FormerDDRmember <- as.factor(df_ranef$FormerDDRmember)
 sorted_keys <- df_ranef %>% group_by(key) %>% summarise(meano=mean(value)) %>% arrange(meano)
@@ -239,7 +251,7 @@ df_ranef[which(df_ranef$CropType == 'OR'), "CropType"] <- "Oil-seed rape"
 df_ranef[which(df_ranef$CropType == 'LE'), "CropType"] <- "Legumes"
 
 
-
+#df_ranef[which(df_ranef$key == 'BB'), "key"] <- "Brandenburg"
 
 
 
@@ -247,13 +259,25 @@ df_ranef$linetype <- "22"
 df_ranef[which(df_ranef$FormerDDRmember==1),"linetype"] <- "solid"
 linetype_mapping <- c(df_ranef$linetype)
 unique(linetype_mapping)
-jpeg("05_Bayesian_model/figures/varying_slopes.jpeg", 
+
+breakos <- df_ranef %>% filter(grepl("slope",level_type)) %>% group_by(key) %>% 
+  summarise(meano=mean(value)) %>% arrange(meano) %>% 
+  select(key) %>% mutate(states=substr(key, 1, 2)) %>% 
+  select(states) %>% pull()
+breakos[which(breakos == 'BB')] <- 'Brandenburg'
+breakos[which(breakos == 'BV')] <- 'Bavaria'
+breakos[which(breakos == 'TH')] <- 'Thuringia'
+breakos[which(breakos == 'LS')] <- 'Lower Saxony'
+breakos[which(breakos == 'SA')] <- 'Saxony-Anhalt'
+
+
+jpeg("06_Bayesian_model/figures/varying_slopes.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
      type = "cairo")
 ggplot()+
-  ggridges::geom_density_ridges(data  = df_ranef %>% filter(grepl(".log_field_size",key)), 
+  ggridges::geom_density_ridges(data  = df_ranef %>% filter(grepl("slope",level_type)), 
                                 aes(x      = (value),
                                     y      = key,
                                     height = after_stat(density), 
@@ -264,13 +288,28 @@ ggplot()+
   geom_vline(xintercept = 0, 
              col        = "red") + 
   scale_fill_brewer(palette="Set2") + scale_color_manual(values=c("black", "red")) +
-  labs(col='former GDR member', linetype='former GDR member')
-
+  labs(col='', linetype='') + 
+  xlab('') + ylab('') + 
+  theme_bw() + 
+  scale_y_discrete(labels = breakos, expand = c(0.1, 0)) + 
+  ggtitle('Varying Slopes')
 
 
 dev.off()
 
-jpeg("05_Bayesian_model/figures/varying_intercepts.jpeg", 
+
+
+breakos <- df_ranef %>% filter(grepl("intercept mu",level_type)) %>% group_by(key) %>% 
+  summarise(meano=mean(value)) %>% arrange(meano) %>% 
+  select(key) %>% mutate(states=substr(key, 1, 2)) %>% 
+  select(states) %>% pull()
+breakos[which(breakos == 'BB')] <- 'Brandenburg'
+breakos[which(breakos == 'BV')] <- 'Bavaria'
+breakos[which(breakos == 'TH')] <- 'Thuringia'
+breakos[which(breakos == 'LS')] <- 'Lower Saxony'
+breakos[which(breakos == 'SA')] <- 'Saxony-Anhalt'
+
+jpeg("06_Bayesian_model/figures/varying_intercepts.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
@@ -287,20 +326,35 @@ ggplot()+
                                     col=FormerDDRmember), scale=3, alpha=0.6) + 
   scale_x_continuous(limits = c(-2,2)) + geom_vline(xintercept = 0, col= "red")+ 
   scale_fill_brewer(palette="Set2") +
-  scale_color_manual(values=c("black", "red")) + 
-  labs(col='former GDR member', linetype='former GDR member')
+  scale_color_manual(values=c("black", "red"))  +
+  labs(col='', linetype='') + 
+  xlab('') + ylab('') + 
+  theme_bw() + 
+  scale_y_discrete(labels = breakos, expand = c(0.1, 0)) + 
+  ggtitle('Varying Intercepts')
 
 dev.off()
 
 
 
 
+breakos <- df_ranef %>% filter(grepl("intercept sigma",level_type)) %>% group_by(key) %>% 
+  summarise(meano=mean(value)) %>% arrange(meano) %>% 
+  select(key) %>% mutate(states=substr(key, 1, 2)) %>% 
+  select(states) %>% pull()
+breakos[which(breakos == 'BB')] <- 'Brandenburg'
+breakos[which(breakos == 'BV')] <- 'Bavaria'
+breakos[which(breakos == 'TH')] <- 'Thuringia'
+breakos[which(breakos == 'LS')] <- 'Lower Saxony'
+breakos[which(breakos == 'SA')] <- 'Saxony-Anhalt'
 
-jpeg("05_Bayesian_model/figures/yarying_intercepts_sigma.jpeg", 
+
+jpeg("06_Bayesian_model/figures/yarying_intercepts_sigma.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
      type = "cairo")
+
 
 ggplot()+
   ggridges::geom_density_ridges(data  = df_ranef %>% filter(grepl("sigma",key)), 
@@ -312,33 +366,38 @@ ggplot()+
                                     col=FormerDDRmember), scale=3, alpha=0.6) + 
   scale_x_continuous(limits = c(-0.6,0.6)) + geom_vline(xintercept = 0, col= "red")+ 
   scale_fill_brewer(palette="Set2") +
-  scale_color_manual(values=c("black", "red")) + 
-  labs(col='former GDR member', linetype='former GDR member')
+  scale_color_manual(values=c("black", "red")) +
+  labs(col='', linetype='') + 
+  xlab('') + ylab('') + 
+  theme_bw() + 
+  scale_y_discrete(labels = breakos, expand = c(0.1, 0)) + 
+  ggtitle('Varying Intercepts Sigma')
 dev.off()
 
 
 ################################################################################
 # fixed effects plot / population level effects
 
-summary(model_surrf_lognorm_7)
+summary(model_surrf_lognorm_7_full)
 
 range(df_sample_large$surrf_mean)
 
-plotto <- conditional_effects(model_surrf_lognorm_7_full, effects='log_field_size') 
+plotto <- conditional_effects(model_surrf_lognorm_7_full, effects='log_field_size', robust=TRUE) 
 
-jpeg("05_Bayesian_model/figures/fixed_eff_fs.jpeg", 
+plotto$log_field_size$effect1__
+jpeg("06_Bayesian_model/figures/fixed_eff_fs.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
      type = "cairo")
 ggplot(data = df, aes(log_field_size, farm_size_ha)) + 
-  geom_point(alpha=0.051) + 
+  #geom_point(alpha=0.051) + 
   stat_density_2d(aes(fill = after_stat(level)), 
                          geom = "polygon", contour = TRUE, bins=200) + 
   scale_fill_distiller(palette = 5, direction = 1) +
   
   theme_classic() +
-  scale_x_continuous(breaks = x_ref, labels = fs_label_list, limits=c(-6, 4)) + 
+  scale_x_continuous(breaks = x_ref, labels = fs_label_list, limits=c(-4, 4)) + 
     geom_ribbon(data = plotto$log_field_size,
                 aes(x = log_field_size, ymin = lower__, ymax = upper__), alpha = 0.5, fill='brown1') +
   geom_line(data=plotto$log_field_size, aes(x=effect1__, y=estimate__), col='black', 
@@ -348,22 +407,22 @@ ggplot(data = df, aes(log_field_size, farm_size_ha)) +
 dev.off()
 
 
-plotto <- conditional_effects(model_surrf_lognorm_7_full, effects='surrf_mean_log') 
+plotto <- conditional_effects(model_surrf_lognorm_7_full, effects='log_surrf_mean') 
 
-jpeg("05_Bayesian_model/figures/fixed_eff_surfs.jpeg", 
+jpeg("06_Bayesian_model/figures/fixed_eff_surfs.jpeg", 
      
      width = 20, height = 15, quality = 100, units = "cm",res= 300,
      
      type = "cairo")
-ggplot(data = df, aes(surrf_mean_log, farm_size_ha)) + 
+ggplot(data = df, aes(log_surrf_mean, farm_size_ha)) + 
   geom_point(alpha=0.051) + 
   stat_density_2d(aes(fill = after_stat(level)), 
                   geom = "polygon", contour = TRUE, bins=200) + 
   scale_fill_distiller(palette = 5, direction = 1) +
   theme_classic() +
-  geom_ribbon(data = plotto$surrf_mean_log,
-              aes(x = surrf_mean_log, ymin = lower__, ymax = upper__), alpha = 0.5, fill='brown1') +
-  geom_line(data=plotto$surrf_mean_log, aes(x=effect1__, y=estimate__), col='black', 
+  geom_ribbon(data = plotto$log_surrf_mean,
+              aes(x = log_surrf_mean, ymin = lower__, ymax = upper__), alpha = 0.5, fill='brown1') +
+  geom_line(data=plotto$log_surrf_mean, aes(x=effect1__, y=estimate__), col='black', 
             linewidth=1) + 
  scale_x_continuous(breaks = x_ref_surrf, labels = fs_surff_label_list, limits = c(-6, 6)) 
   xlab('surrounding field size in ha') + ylab('farm size in ha') +
