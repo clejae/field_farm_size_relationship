@@ -25,43 +25,35 @@ def log_and_scale_data(input_pth, output_pth):
 
     ## Due to some different calculations of the field sizes in prior steps (R-pyhton), sometimes the field sizes are
     ## only slightly smaller than the farm sizes, causing trouble in later steps
-    iacs.loc[iacs["fieldCount"] == 1, "farm_size_r"] = 0
+    iacs.loc[iacs["fieldCount"] == 1, "farm_size_r"] = 0.001
+    iacs.loc[iacs["farm_size_r"] == 0, "farm_size_r"] = 0.001
     iacs.loc[iacs["fieldCount"] == 1, "farm_size"] = iacs.loc[iacs["fieldCount"] == 1, "field_size"]
 
+    print("min. farm_size_r:", iacs["farm_size_r"].min(), "\tmin. farm_size", iacs["farm_size_r"].min())
+
     ## Calculate values to m²
-    cols = ["field_size", "surrf_mean", "surrf_medi", "surrf_std", "surrf_min", "surrf_max"]
-    # cols = [
-    #     ["field_size", "surrf_mean_100", "surrf_median_100", "surrf_std_100", "surrf_min_100", "surrf_max_100",
-    #      "surrf_no_fields_100",
-    #      "surrf_mean_500", "surrf_median_500", "surrf_std_500", "surrf_min_500", "surrf_max_500", "surrf_no_fields_500",
-    #      "surrf_mean_1000", "surrf_median_1000", "surrf_std_1000", "surrf_min_1000", "surrf_max_1000",
-    #      "surrf_no_fields_1000"]]
+    cols = ["field_size", "surrf_mean", "surrf_std", "surrf_min", "surrf_max"]
     for col in cols:
         iacs[col] = iacs[col] * 10000
 
-    ## Remove all fields smaller 1m²
-    iacs = iacs.loc[iacs["field_size"] >= 2].copy()
+    ## Remove all fields smaller 100m²
+    iacs = iacs.loc[iacs["field_size"] >= 100].copy()
 
     ## Drop zeros in the surrounding field statistics
-    cols = ["surrf_mean", "surrf_medi", "surrf_std", "surrf_min", "surrf_max"]
-    # cols = ["surrf_mean_100", "surrf_median_100", "surrf_std_100", "surrf_min_100", "surrf_max_100",
-    #         "surrf_mean_500", "surrf_median_500", "surrf_std_500", "surrf_min_500", "surrf_max_500",
-    #         "surrf_mean_1000", "surrf_median_1000", "surrf_std_1000", "surrf_min_1000", "surrf_max_1000"]
+    cols = ["surrf_mean", "surrf_std", "surrf_min", "surrf_max"]
     for col in cols:
         iacs = iacs.loc[iacs[col] > 0].copy()
 
     ## Calculate natural logarithm
-    # cols = ["field_size", "farm_size", "farm_size_r", "surrf_mean_100", "surrf_median_100", "surrf_std_100",
-    #         "surrf_min_100", "surrf_max_100",
-    #         "surrf_mean_500", "surrf_median_500", "surrf_std_500", "surrf_min_500", "surrf_max_500",
-    #         "surrf_mean_1000", "surrf_median_1000", "surrf_std_1000", "surrf_min_1000", "surrf_max_1000"]
-    cols = ["field_size", "farm_size", "farm_size_r", "surrf_mean", "surrf_medi", "surrf_std", "surrf_min", "surrf_max"]
+    cols = ["field_size", "farm_size", "farm_size_r", "surrf_mean", "surrf_std", "surrf_min", "surrf_max"]
     for col in cols:
         iacs[f"log_{col}"] = np.log(iacs[col])
+        iacs[col] = round(iacs[col], 4)
+        iacs[f"log_{col}"] = round(iacs[f"log_{col}"], 4)
     log_cols = [f"log_{col}" for col in cols]
 
     ## Create interaction terms
-    iacs["inter_cr_st"] = iacs["new_IDKTYP"] + iacs["federal_st"]
+    iacs["inter_cr_st"] = iacs["new_ID_KTYP"] + iacs["federal_st"]
     iacs["inter_sfm_prag"] = iacs["log_surrf_mean"] + iacs["propAg1000"]
 
     ## Scale variables
@@ -72,6 +64,8 @@ def log_and_scale_data(input_pth, output_pth):
     scale = StandardScaler()
     for col in scale_cols:
         iacs[col] = scale.fit_transform(iacs[[col]])
+        iacs[col] = round(iacs[col], 4)
+
 
     ## Drop farms that have likely most of their areas outside our study area
     iacs["fstate_id"] = iacs["farm_id"].apply(lambda x: x[:2])
@@ -83,15 +77,35 @@ def log_and_scale_data(input_pth, output_pth):
     iacs.to_csv(output_pth, index=False)
 
 
+def subset_training_data(log_and_scaled_data_pth, sample_pth, output_pth):
+    # Subset training data
+    print("Read input.")
+    df = pd.read_csv(log_and_scaled_data_pth)
+    df_ids = pd.read_csv(sample_pth)
+
+    print("Get sample.")
+    df = pd.merge(df, df_ids, how="left", on="field_id")
+    df = df.loc[df["matched_sample"] == 1].copy()
+
+    print("Write ouput.")
+    df.to_csv(output_pth)
+
+
 ## ------------------------------------------ RUN PROCESSES ---------------------------------------------------#
 def main():
     s_time = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())
     print("start: " + s_time)
     os.chdir(WD)
 
-    log_and_scale_data(
-        input_pth=rf'data\test_run2\all_predictors_w_grassland_.csv',
-        output_pth=rf'models\all_predictors_w_grassland_w_sqr_log_and_scaled.csv'
+    # log_and_scale_data(
+    #     input_pth=rf'data\tables\predictors\all_predictors_w_grassland.csv',
+    #     output_pth=rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled.csv'
+    # )
+
+    subset_training_data(
+        log_and_scaled_data_pth=rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled.csv',
+        sample_pth=rf"data\tables\predictors\all_field_ids_w_sample.csv",
+        output_pth=rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled_matched_sample.csv'
     )
 
     e_time = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())

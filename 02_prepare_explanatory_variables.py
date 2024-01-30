@@ -146,6 +146,242 @@ def zonal_stats_alt(gpd, rst_fn, stats=["mean"]):
     gpd['std'] = std_values
     return gpd
 
+
+def get_size_and_administrative_variables(iacs_pth, size_vars_out_pth):
+    # ----------------------------------------------------------------------------------------------------
+    ###VECTOR DATA PROCESSING
+    ##read vector data
+    # invekos
+    iacs = gpd.read_file(iacs_pth)
+    iacs.dropna(inplace=True)
+
+    # data info
+    print("CRS IACS:", iacs.crs)
+
+    # ----------------------------------------------------------------------------------------------------
+    # calculate field sizes and hexagon sizes
+
+    # calculate field size
+    iacs["fieldSizeM2"] = iacs.area
+
+    # ----------------------------------------------------------------------------------------------------
+    ###Count number of fields per farm
+    df = iacs.groupby(['farm_id']).agg(
+        fieldCount=pd.NamedAgg("field_id", "count")
+    ).reset_index()
+
+    # merge to invekos dataframe
+    iacs = pd.merge(iacs, df, how="left", on="farm_id")
+
+    # ----------------------------------------------------------------------------------------------------
+    ###assign if former East or West Germany member
+    iacs.rename(columns={"state": "federal_state"}, inplace=True)
+    iacs['FormerDDRmember'] = 0
+    iacs.loc[iacs["federal_state"].isin(["BB", "SA", "TH"]), "FormerDDRmember"] = 1
+    print("Values for FormerDDRmember:", iacs.FormerDDRmember.unique())
+
+    iacs.drop(columns=["geometry"], inplace=True)
+    iacs.to_csv(size_vars_out_pth, index=False)
+
+
+def calculate_proportion_agricultural_area(iacs_pth, sum_agr_out_pth):
+
+    print("Read IACS")
+    iacs = gpd.read_file(iacs_pth)
+    iacs.dropna(inplace=True)
+    iacs.index = range(len(iacs))
+    def process_chunk(chunk, c, iacs):
+        print("Processing chunk", c)
+        ## temp:
+        # chunk = iacs.index[0:0 + 10]
+        # index = chunk[1]
+        ## creat spatial index
+        spatial_index = iacs.copy().sindex
+        intersected_list = []
+        ## loop over rows
+        for i in chunk:
+            # print(i)
+            row = iacs.iloc[i].copy()
+            # field_id = iacs["field_id"].iloc[i]
+            geom = row.geometry.centroid.buffer(1000)
+            possible_matches_index = list(spatial_index.intersection(geom.bounds))
+            possible_matches = iacs.iloc[possible_matches_index].copy()
+            inters_df = iacs.loc[iacs.index == i].copy()
+            inters_df.geometry = inters_df.geometry.centroid.buffer(1000)
+            try:
+                intersection = gpd.overlay(possible_matches, inters_df, how="intersection", keep_geom_type=False,
+                                           make_valid=True)
+                agri_area_in_buffer = intersection.area.sum()
+            except:
+                agri_area_in_buffer = 0
+
+            # possible_matches.to_file(
+            #     fr"Q:\FORLand\Field_farm_size_relationship\data\tables\predictors\possible_matches_{index}.gpkg",
+            #     driver="GPKG")
+            # inters_df.to_file(rf"Q:\FORLand\Field_farm_size_relationship\data\tables\predictors\inters_df_{index}.gpkg",
+            #                   driver="GPKG")
+            ## temp:
+            # possible_matches.to_file(r"Q:\FORLand\Field_farm_size_relationship\temp\possible_matches.shp")
+            # inters_df.to_file(r"Q:\FORLand\Field_farm_size_relationship\temp\buffer.shp")
+            # intersection.to_file(r"Q:\FORLand\Field_farm_size_relationship\temp\intersection.shp")
+
+            intersected_list.append((i, agri_area_in_buffer))
+
+        df_res = pd.DataFrame(intersected_list, columns=["index", "sumAgr1000"])
+        df_res.to_csv(sum_agr_out_pth[:-4] + f'_chunk{c}.csv', index=False)
+
+        return intersected_list
+
+    num_processes = 10
+    chunk_size = len(iacs) // num_processes
+    chunks = [iacs.index[i:i + chunk_size] for i in range(0, len(iacs), chunk_size)]
+
+    results = Parallel(n_jobs=num_processes)(
+        delayed(process_chunk)(chunk, c, iacs)
+        for c, chunk in enumerate(chunks))
+
+    # ## Because parallel processing doesn't work, I wrote a loop
+    # spatial_index = iacs.copy().sindex
+    # results = []
+    # for x, chunk in enumerate(chunks):
+    #     print("Processing", x, "chunk of", len(chunks), "chunks.")
+    #     intersected_list = []
+    #     for i in chunk:
+    #         # print(i)
+    #         row = iacs.iloc[i].copy()
+    #         # field_id = iacs["field_id"].iloc[i]
+    #         geom = row.geometry.centroid.buffer(1000)
+    #         possible_matches_index = list(spatial_index.intersection(geom.bounds))
+    #         possible_matches = iacs.iloc[possible_matches_index].copy()
+    #         inters_df = iacs.loc[iacs.index == i].copy()
+    #         inters_df.geometry = inters_df.geometry.centroid.buffer(1000)
+    #         try:
+    #             intersection = gpd.overlay(possible_matches, inters_df, how="intersection", keep_geom_type=False, make_valid=True)
+    #             agri_area_in_buffer = intersection.area.sum()
+    #         except:
+    #             agri_area_in_buffer = 0
+    #
+    #         # possible_matches.to_file(
+    #         #     fr"Q:\FORLand\Field_farm_size_relationship\data\tables\predictors\possible_matches_{index}.gpkg",
+    #         #     driver="GPKG")
+    #         # inters_df.to_file(rf"Q:\FORLand\Field_farm_size_relationship\data\tables\predictors\inters_df_{index}.gpkg",
+    #         #                   driver="GPKG")
+    #         ## temp:
+    #         # possible_matches.to_file(r"Q:\FORLand\Field_farm_size_relationship\temp\possible_matches.shp")
+    #         # inters_df.to_file(r"Q:\FORLand\Field_farm_size_relationship\temp\buffer.shp")
+    #         # intersection.to_file(r"Q:\FORLand\Field_farm_size_relationship\temp\intersection.shp")
+    #
+    #         intersected_list.append((i, agri_area_in_buffer))
+    #
+    #     df_res = pd.DataFrame(intersected_list, columns=["index", "sumAgr1000"])
+    #     df_res.to_csv(sum_agr_out_pth[:-4] + f'_chunk{x}.csv', index=False)
+    #     results.append(intersected_list)
+
+    df_lsts = [pd.DataFrame(sublist, columns=["index", "sumAgr1000"]) for sublist in results]
+    intersected_combined = pd.concat(df_lsts)
+    intersected_combined.index = intersected_combined["index"]
+    intersected_combined.drop(columns="index", inplace=True)
+    iacs = pd.merge(iacs, intersected_combined, "left", left_index=True, right_index=True)
+    iacs["propAg1000"] = round(iacs["sumAgr1000"] / (math.pi * 1000 * 1000), 2)
+
+    iacs[["field_id", "propAg1000", "sumAgr1000"]].to_csv(sum_agr_out_pth, index=False)
+
+
+def calculate_elevation_per_field(iacs_pth, dem_pth, elevation_out_pth):
+
+    print("Read IACS")
+    iacs = gpd.read_file(iacs_pth)
+    iacs.dropna(inplace=True)
+
+    with rasterio.open(dem_pth) as src:
+        affine = src.transform  # using affine transformation matrix
+        array = src.read(1)
+        ndval = src.nodatavals[0]
+        array[array == ndval] = np.nan  # set no data values to appropriate na-value format
+        zonal_stats_fields = pd.DataFrame(
+            zonal_stats(iacs, array, all_touched=True, nodata=np.nan, affine=affine, stats=["mean", "std"]))
+
+    zonal_stats_fields.rename(columns={'mean': 'ElevationA', 'std': 'sdElev0'}, inplace=True)
+    iacs = pd.concat([iacs, zonal_stats_fields], axis=1)
+
+    iacs[["field_id", "ElevationA", "sdElev0"]].to_csv(elevation_out_pth, index=False)
+
+
+def calculate_terrain_ruggedness_index_per_field(iacs_pth, tri_pth, tri_out_pth):
+    print("Read IACS")
+    iacs = gpd.read_file(iacs_pth)
+    iacs.dropna(inplace=True)
+
+    with rasterio.open(tri_pth) as src:
+        affine = src.transform  # using affine transformation matrix
+        array = src.read(1)
+        ndval = src.nodatavals[0]
+        array[array == ndval] = np.nan  # set no data values to appropriate na-value format
+        zonal_stats_fields = pd.DataFrame(
+            zonal_stats(iacs, array, all_touched=True, nodata=np.nan, affine=affine, stats=["mean"]))
+        zonal_stats_buff500 = pd.DataFrame(
+            zonal_stats(iacs.geometry.centroid.buffer(500), array, all_touched=True, nodata=np.nan, affine=affine,
+                        stats=["mean"]))
+        zonal_stats_buff1000 = pd.DataFrame(
+            zonal_stats(iacs.geometry.centroid.buffer(1000), array, all_touched=True, nodata=np.nan, affine=affine,
+                        stats=["mean"]))
+
+    zonal_stats_fields.rename(columns={'mean': 'avgTRI0'}, inplace=True)
+    zonal_stats_buff500.rename(columns={'mean': 'avgTRI500'}, inplace=True)
+    zonal_stats_buff1000.rename(columns={'mean': 'avgTRI1000'}, inplace=True)
+    zonal_stats_fields = pd.concat([zonal_stats_fields, zonal_stats_buff500, zonal_stats_buff1000], axis=1)
+    iacs = pd.concat([iacs, zonal_stats_fields], axis=1)
+
+    iacs[["field_id", "avgTRI0", "avgTRI500", "avgTRI1000"]].to_csv(tri_out_pth, index=False)
+
+
+def calculate_soil_quality_per_field(iacs_pth, sqr_pth, sqr_out_pth):
+    print("Read IACS")
+    iacs = gpd.read_file(iacs_pth)
+    iacs.dropna(inplace=True)
+
+    with rasterio.open(sqr_pth) as src:
+        affine = src.transform  # using affine transformation matrix
+        array = src.read(1)
+        ndval = src.nodatavals[0]
+        array = array.astype('float64')
+        array[array == ndval] = np.nan  # set no data values to appropriate na-value format
+        zonal_stats_fields = pd.DataFrame(
+            zonal_stats(iacs, array, affine=affine, nodata=np.nan, all_touched=True, stats=["mean"]))
+
+    zonal_stats_fields.rename(columns={'mean': 'SQRAvrg'}, inplace=True)
+    # zonal_stats_fields.to_csv(r"test_run2\SQRAvrg\SQRAvrg_w_grassland.csv", index=False)
+    iacs = pd.concat([iacs, zonal_stats_fields], axis=1)
+    iacs[["field_id", "SQRAvrg"]].to_csv(sqr_out_pth, index=False)
+
+
+def concatenate_predictors(size_vars_pth, sum_agr_pth, elevation_pth, tri_pth, sqr_pth, surrf_pth, predictors_out_pth):
+
+    sizes = pd.read_csv(size_vars_pth)
+    sumagr = pd.read_csv(sum_agr_pth)
+    elev = pd.read_csv(elevation_pth)
+    tri = pd.read_csv(tri_pth)
+    sqr = pd.read_csv(sqr_pth)
+    surr = pd.read_csv(surrf_pth)
+
+    for col in surr.columns:
+        surr.loc[surr[col].isna(), col] = 0
+    print(len(surr), len(surr.loc[surr.isnull().any(axis=1)]))
+
+    df_out = pd.merge(sizes, sumagr, "left", "field_id")
+    df_out = pd.merge(df_out, elev, "left", "field_id")
+    df_out = pd.merge(df_out, tri, "left", "field_id")
+    df_out = pd.merge(df_out, sqr, "left", "field_id")
+    df_out = pd.merge(df_out, surr, "left", "field_id")
+
+    for col in surr.columns:
+        df_out.loc[df_out[col].isna(), col] = 0
+
+    for col in ["avgTRI0", "ElevationA"]:
+        df_out = df_out.loc[~df_out[col].isna()].copy()
+
+    df_out.to_csv(predictors_out_pth, index=False)
+
 def prepare_explanatory_variables(iacs_pth, dem_pth, tri_pth, sqr_pth, sum_agr_out_pth, elevation_out_pth,
                                   tri_out_pth, sqr_out_pth, predictors_out_pth):
     # ----------------------------------------------------------------------------------------------------
@@ -192,7 +428,7 @@ def prepare_explanatory_variables(iacs_pth, dem_pth, tri_pth, sqr_pth, sum_agr_o
     print("Values for FormerDDRmember:", iacs.FormerDDRmember.unique())
 
     # ----------------------------------------------------------------------------------------------------
-    #
+
     # # calculate centroids of fields
     # iacs["centroids"] = iacs["geometry"].centroid
     # centroids = iacs[["field_id", "centroids"]].copy()
@@ -241,7 +477,7 @@ def prepare_explanatory_variables(iacs_pth, dem_pth, tri_pth, sqr_pth, sum_agr_o
             intersected_list.append((index, agri_area_in_buffer))
         return intersected_list
 
-    num_processes = 8
+    num_processes = 20
     chunk_size = len(iacs) // num_processes
     chunks = [iacs.index[i:i + chunk_size] for i in range(0, len(iacs), chunk_size)]
     results = Parallel(n_jobs=num_processes)(
@@ -486,6 +722,7 @@ def merge_surr_fields_with_other_variables(iacs_pth, surrf_pth, out_pth):
         iacs = pd.read_csv(iacs_pth)
     else:
         return
+
     surr = pd.read_csv(surrf_pth)
     for col in surr.columns:
         surr.loc[surr[col].isna(), col] = 0
@@ -495,7 +732,7 @@ def merge_surr_fields_with_other_variables(iacs_pth, surrf_pth, out_pth):
         iacs.loc[iacs[col].isna(), col] = 0
 
     # iacs.to_file(out_pth)
-    iacs.drop(columns="geometry", inplace=True)
+    # iacs.drop(columns="geometry", inplace=True)
     iacs.to_csv(out_pth[:-3] + "csv", index=False)
 
 
@@ -509,23 +746,57 @@ def main():
     #     out_pth=r"tables\predictors\surrounding_fields_stats_ALL_1000m.csv",
     #     buffer_radius=1000)
 
-    prepare_explanatory_variables(
-        iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
-        dem_pth="raster/Dem_3035.tif",
-        tri_pth="raster/DEM_TRI_GER_25m.tif",
-        sqr_pth="raster/sqr1000_250_v10_3035.tif",
-        sum_agr_out_pth="tables/predictors/SumAgr_w_grassland.csv",
-        elevation_out_pth=r"tables/predictors/elevationAvrg_w_grassland.csv",
-        tri_out_pth=r"tables/predictors/TRI_w_grassland.csv",
-        sqr_out_pth=r"tables/predictors/SQRAvrg_w_grassland.csv",
-        predictors_out_pth="tables/predictors/soil_landscape_predictors.csv"
+    # get_size_and_administrative_variables(
+    #     iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
+    #     size_vars_out_pth="tables/predictors/size_vars_w_grassland.csv")
+
+    # calculate_proportion_agricultural_area(
+    #     iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
+    #     sum_agr_out_pth="tables/predictors/SumAgr_w_grassland_ALL.csv")
+
+    # calculate_elevation_per_field(
+    #     iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
+    #     dem_pth="raster/Dem_3035.tif",
+    #     elevation_out_pth=r"tables/predictors/elevationAvrg_w_grassland.csv")
+    #
+    # calculate_terrain_ruggedness_index_per_field(
+    #     iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
+    #     tri_pth="raster/DEM_TRI_GER_25m.tif",
+    #     tri_out_pth=r"tables/predictors/TRI_w_grassland.csv")
+    #
+    # calculate_soil_quality_per_field(
+    #     iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
+    #     sqr_pth="raster/sqr1000_250_v10_3035.tif",
+    #     sqr_out_pth=r"tables/predictors/SQRAvrg_w_grassland.csv")
+
+    concatenate_predictors(
+        size_vars_pth="tables/predictors/size_vars_w_grassland.csv",
+        sum_agr_pth="tables/predictors/SumAgr_w_grassland_ALL.csv",
+        elevation_pth=r"tables/predictors/elevationAvrg_w_grassland.csv",
+        tri_pth=r"tables/predictors/TRI_w_grassland.csv",
+        sqr_pth=r"tables/predictors/SQRAvrg_w_grassland.csv",
+        surrf_pth=r"tables/predictors/surrounding_fields_stats_ALL_1000m.csv",
+        predictors_out_pth="tables/predictors/all_predictors_w_grassland.csv"
     )
 
-    merge_surr_fields_with_other_variables(
-        iacs_pth=r"tables/predictors/soil_landscape_predictors.csv",
-        surrf_pth=r"tables/predictors/surrounding_fields_mean_sizes_ALL_1000m.csv",
-        out_pth=r"tables/predictors/all_predictors_w_grassland.csv"
-    )
+
+    # # prepare_explanatory_variables(
+    # #     iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
+    # #     dem_pth="raster/Dem_3035.tif",
+    # #     tri_pth="raster/DEM_TRI_GER_25m.tif",
+    # #     sqr_pth="raster/sqr1000_250_v10_3035.tif",
+    # #     sum_agr_out_pth="tables/predictors/SumAgr_w_grassland.csv",
+    # #     elevation_out_pth=r"tables/predictors/elevationAvrg_w_grassland.csv",
+    # #     tri_out_pth=r"tables/predictors/TRI_w_grassland.csv",
+    # #     sqr_out_pth=r"tables/predictors/SQRAvrg_w_grassland.csv",
+    # #     predictors_out_pth="tables/predictors/soil_landscape_predictors.csv"
+    # # )
+    #
+    # # merge_surr_fields_with_other_variables(
+    # #     iacs_pth=r"tables/predictors/soil_landscape_predictors.csv",
+    # #     surrf_pth=r"tables/predictors/surrounding_fields_stats_ALL_1000m.csv",
+    # #     out_pth=r"tables/predictors/all_predictors_w_grassland.csv"
+    # # )
 
     e_time = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())
     print("start: " + s_time)

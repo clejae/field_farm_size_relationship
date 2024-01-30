@@ -55,7 +55,7 @@ def prepare_large_iacs_shp(input_dict, out_pth, grassland=True):
     out_shp = pd.merge(out_shp, farm_sizes, on="farm_id", how="left")
     out_shp = out_shp[["field_id", "farm_id", "field_size", "farm_size", "crop_name", "ID_KTYP",  "state", "geometry"]].copy()
     # t = out_shp.loc[out_shp["geometry"] != None].copy()
-    out_shp.to_crs(3035)
+    out_shp = out_shp.to_crs(3035)
     out_shp.to_file(out_pth, driver="GPKG")
 
     ## Temporary:
