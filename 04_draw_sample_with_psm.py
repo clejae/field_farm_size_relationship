@@ -389,26 +389,26 @@ def main():
         sample=0.25
     )
 
-    # ## Plot kde after matching nicely
-    # ## Open data
-    #
-    # df = pd.read_csv(rf"data/tables/predictors/all_field_ids_w_sample.csv")
-    # iacs = pd.read_csv(r"data\tables\predictors\all_predictors_w_grassland.csv")
-    # iacs = pd.merge(iacs, df, "left", "field_id")
-    # n = int(len(iacs) * 0.25)
-    # iacs_rsample = iacs.sample(n=n, random_state=1)
-    # iacs_rsample["treatment"] = 1
-    # iacs_matched = iacs.loc[iacs["matched_sample"] == 1].copy()
-    # iacs_matched["treatment"] = 0
-    #
-    # df_plt = pd.concat([iacs_rsample, iacs_matched])
-    #
-    # compare_distributions_of_variables(
-    #     df=df_plt,
-    #     hue_col="treatment",
-    #     hue_dict={1: "random sample", 0: "matched sample"},
-    #     out_pth=rf"data/tables/matching/03_comparison_random_sample_with_matched_sample_corrected.png"
-    # )
+    ## Plot kde after matching nicely
+    ## Open data
+
+    df = pd.read_csv(rf"data/tables/predictors/all_field_ids_w_sample.csv")
+    iacs = pd.read_csv(r"data\tables\predictors\all_predictors_w_grassland.csv")
+    iacs = pd.merge(iacs, df, "left", "field_id")
+    n = int(len(iacs) * 0.25)
+    iacs_rsample = iacs.sample(n=n, random_state=1)
+    iacs_rsample["treatment"] = 1
+    iacs_matched = iacs.loc[iacs["matched_sample"] == 1].copy()
+    iacs_matched["treatment"] = 0
+
+    df_plt = pd.concat([iacs_rsample, iacs_matched])
+
+    compare_distributions_of_variables(
+        df=df_plt,
+        hue_col="treatment",
+        hue_dict={1: "random sample", 0: "matched sample"},
+        out_pth=rf"data/tables/matching/03_comparison_random_sample_with_matched_sample_corrected.png"
+    )
 
 
     e_time = time.strftime("%a, %d %b %Y %H:%M:%S", time.localtime())

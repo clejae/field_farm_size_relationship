@@ -217,6 +217,8 @@ def plot_apu(preds, pred_cols, ref_cols, apu_plot_pth, subtitles=None, qcut_col=
         if (len(pred_cols) != 1) & (i < len(pred_cols)-1):
             ax.set_xticklabels([])
 
+        apu_df.to_csv(rf"{apu_plot_pth.split('.')[0]}_{title[:1]}.csv")
+
     ## Add this only to last plot
     ax.set_xlabel('Farm sizes [ha]')
     ax.tick_params(axis='x', labelrotation=45)
@@ -457,7 +459,7 @@ def plot_aggregated_farm_sizes_hexagon_divided(preds, hex_shp, f_to_h, pred_cols
         axs[i, 0].set_title("Reference")
         gdf_e.plot(column="agg_ref", ax=axs[i, 0], vmin=vmin_e, vmax=vmax_e, legend=True, cmap="Blues",
                    legend_kwds={'label': "East", 'orientation': "horizontal", "fraction": 0.04, "anchor": (0.1, 1.5), "pad": 0.01})
-        gdf_w.plot(column="agg_ref", ax=axs[i, 0], vmin=vmin_w, vmax=vmax_w, legend=True, cmap="Reds",
+        gdf_w.plot(column="agg_ref", ax=axs[i, 0], vmin=vmin_w, vmax=vmax_w, legend=True, cmap="Greens",
                    legend_kwds={'label': "West", 'orientation': "horizontal", "fraction": 0.04, "anchor": (0.1, 0.7), "pad": 0.01})
         # gdf["color"] = gdf["bins_ref"].map(color_dict)
         # gdf.plot(color=gdf["color"], ax=axs[i, 0], legend=False, edgecolor='none')
@@ -469,7 +471,7 @@ def plot_aggregated_farm_sizes_hexagon_divided(preds, hex_shp, f_to_h, pred_cols
         axs[i, 1].set_title("Prediction")
         gdf_e.plot(column="agg_pred", ax=axs[i, 1], vmin=vmin_e, vmax=vmax_e, legend=True, cmap="Blues",
                    legend_kwds={'orientation': "horizontal", "fraction": 0.04, "anchor": (0.1, 1.5), "pad": 0.01})
-        gdf_w.plot(column="agg_pred", ax=axs[i, 1], vmin=vmin_w, vmax=vmax_w, legend=True, cmap="Reds",
+        gdf_w.plot(column="agg_pred", ax=axs[i, 1], vmin=vmin_w, vmax=vmax_w, legend=True, cmap="Greens",
                    legend_kwds={'orientation': "horizontal", "fraction": 0.04, "anchor": (0.1, 1.0), "pad": 0.01})
         # gdf["color"] = gdf["bins_pred"].map(color_dict)
         # gdf.plot(color=gdf["color"], ax=axs[i, 1], legend=False, edgecolor='none')
@@ -481,13 +483,13 @@ def plot_aggregated_farm_sizes_hexagon_divided(preds, hex_shp, f_to_h, pred_cols
         vmax_err = gdf["agg_err"].quantile(q=0.98)
 
         axs[i, 2].set_title("Error")
-        vmin_e_err = gdf_e["agg_err"].quantile(q=0.02)
-        vmax_e_err = gdf_e["agg_err"].quantile(q=0.98)
-        vmin_w_err = gdf_w["agg_err"].quantile(q=0.02)
-        vmax_w_err = gdf_w["agg_err"].quantile(q=0.98)
+        vmin_e_err = -350 #gdf_e["agg_err"].quantile(q=0.02) # -121 -352
+        vmax_e_err = 1450 #gdf_e["agg_err"].quantile(q=0.98) # 1466 1176
+        vmin_w_err = -125 #gdf_w["agg_err"].quantile(q=0.02) # -29 -124
+        vmax_w_err = 152 #gdf_w["agg_err"].quantile(q=0.98) # 152 70
         gdf_e.plot(column="agg_err", ax=axs[i, 2], vmin=vmin_e_err, vmax=vmax_e_err, legend=True, cmap="Blues",
                    legend_kwds={'orientation': "horizontal", "fraction": 0.04, "anchor": (0.1, 1.5), "pad": 0.01})
-        gdf_w.plot(column="agg_err", ax=axs[i, 2], vmin=vmin_w_err, vmax=vmax_w_err, legend=True, cmap="Reds",
+        gdf_w.plot(column="agg_err", ax=axs[i, 2], vmin=vmin_w_err, vmax=vmax_w_err, legend=True, cmap="Greens",
                    legend_kwds={'orientation': "horizontal", "fraction": 0.04, "anchor": (0.1, 1.0), "pad": 0.01})
         axs[i, 2].axis('off')
         gdf_2.plot(edgecolor='black', facecolor="none", ax=axs[i, 2], lw=0.1, zorder=2)
@@ -568,10 +570,10 @@ def plot_aggregated_farm_sizes_hexagon_divided(preds, hex_shp, f_to_h, pred_cols
         vmax_e = gdf_e["agg_ref"].quantile(q=0.98)
         vmin_w = gdf_w["agg_ref"].quantile(q=0.02)
         vmax_w = gdf_w["agg_ref"].quantile(q=0.98)
-        vmin_err_e = gdf_e["agg_err"].quantile(q=0.02)
-        vmax_err_e = gdf_e["agg_err"].quantile(q=0.98)
-        vmin_err_w = gdf_w["agg_err"].quantile(q=0.02)
-        vmax_err_w = gdf_w["agg_err"].quantile(q=0.98)
+        vmin_err_e = -350  # gdf_e["agg_err"].quantile(q=0.02) # -121 -352
+        vmax_err_e = 1450  # gdf_e["agg_err"].quantile(q=0.98) # 1466 1176
+        vmin_err_w = -125  # gdf_w["agg_err"].quantile(q=0.02) # -29 -124
+        vmax_err_w = 152  # gdf_w["agg_err"].quantile(q=0.98) # 152 70
 
         ## Legend for reference and predictions
         fig_leg, (ax_leg_e, ax_leg_w) = plt.subplots(nrows=2, figsize=plotting_lib.cm2inch(7.5, 3))
@@ -583,7 +585,7 @@ def plot_aggregated_farm_sizes_hexagon_divided(preds, hex_shp, f_to_h, pred_cols
         # East
         cbar_e.ax.xaxis.set_ticks_position('top')
 
-        cmap_w = mpl.cm.Reds
+        cmap_w = mpl.cm.Greens
         norm_w = mpl.colors.Normalize(vmin=vmin_w, vmax=vmax_w)
         cbar_w = mpl.colorbar.ColorbarBase(ax_leg_w, cmap=cmap_w,
                                            norm=norm_w,
@@ -605,7 +607,7 @@ def plot_aggregated_farm_sizes_hexagon_divided(preds, hex_shp, f_to_h, pred_cols
         # East
         cbar_e.ax.xaxis.set_ticks_position('top')
 
-        cmap_w = mpl.cm.Reds
+        cmap_w = mpl.cm.Greens
         norm_w = mpl.colors.Normalize(vmin=vmin_err_w, vmax=vmax_err_w)
         cbar_w = mpl.colorbar.ColorbarBase(ax_leg_w, cmap=cmap_w,
                                            norm=norm_w,
@@ -940,7 +942,7 @@ def main():
     #     ref_cols=["farm_size_r_bayes", "farm_size_r_selvar", "farm_size_r_allvar"],
     #     subtitles=["a)", "b)", "c)"],
     #     apu_plot_pth=r"models\apu_plot_bayes+rfr_selected+rfr_all_w_sqr.png")
-    #
+
     # plot_apu(
     #     preds=preds_test,
     #     pred_cols=["bayes_pred", "rfr_pred_selvar", "rfr_pred_allvar"],

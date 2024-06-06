@@ -97,10 +97,10 @@ def main():
     print("start: " + s_time)
     os.chdir(WD)
 
-    # log_and_scale_data(
-    #     input_pth=rf'data\tables\predictors\all_predictors_w_grassland.csv',
-    #     output_pth=rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled.csv'
-    # )
+    log_and_scale_data(
+        input_pth=rf'data\tables\predictors\all_predictors_w_grassland.csv',
+        output_pth=rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled.csv'
+    )
 
     subset_training_data(
         log_and_scaled_data_pth=rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled.csv',

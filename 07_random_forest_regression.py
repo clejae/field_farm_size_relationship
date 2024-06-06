@@ -599,18 +599,18 @@ def main():
     print("start: " + s_time)
     os.chdir(WD)
 
-    # run_descr = f"rfr_grid_search_correct"
-    # random_forest_wrapper_grid_search(
-    #     iacs_pth=rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled_matched_sample.csv',
-    #     dep_var="farm_size_r",
-    #     indep_vars=["log_field_size", "log_surrf_mean", 'propAg1000', 'SQRAvrg', 'inter_sfm_prag', "inter_cr_st"],
-    #     categorical_vars=["inter_cr_st"],
-    #     train_size=0.7,
-    #     test_size=0.3,
-    #     run_descr=run_descr,
-    #     out_folder=rf"models\{run_descr}",
-    #     make_predictions=False
-    # )
+    run_descr = f"rfr_grid_search_correct"
+    random_forest_wrapper_grid_search(
+        iacs_pth=rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled_matched_sample.csv',
+        dep_var="farm_size_r",
+        indep_vars=["log_field_size", "log_surrf_mean", 'propAg1000', 'SQRAvrg', 'inter_sfm_prag', "inter_cr_st"],
+        categorical_vars=["inter_cr_st"],
+        train_size=0.7,
+        test_size=0.3,
+        run_descr=run_descr,
+        out_folder=rf"models\{run_descr}",
+        make_predictions=False
+    )
 
     ## WITHOUT SQR
     run_descr = f"rfr_final_run_selected_variables_wo_sqr"
@@ -658,49 +658,49 @@ def main():
     )
 
     ## WITH SQR
-    # run_descr = f"rfr_final_run_selected_variables"
-    # # train_id_df = pd.read_csv(rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled_matched_sample.csv')
-    # # train_ids = train_id_df["field_id"].tolist()
-    # field_ids = pd.read_csv(rf"data\tables\predictors\all_field_ids_w_sample.csv")
-    # train_ids = field_ids.loc[field_ids["matched_sample"] == 1, "field_id"].tolist()
-    # test_ids = field_ids.loc[field_ids["matched_sample"] == 0, "field_id"].tolist()
-    # random_forest_wrapper_clean(
-    #     iacs_pth=rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled.csv',
-    #     dep_var="farm_size_r",
-    #     indep_vars=["log_field_size", "log_surrf_mean", 'propAg1000', 'SQRAvrg', 'inter_sfm_prag', "inter_cr_st"],
-    #     categorical_vars=["inter_cr_st"],
-    #     n_estimators=1000,
-    #     train_ids=train_ids,
-    #     test_ids=test_ids,
-    #     max_features=6,
-    #     criterion="squared_error",
-    #     max_depth=8,
-    #     run_descr=run_descr,
-    #     out_folder=rf"models\{run_descr}",
-    #     make_predictions=True,
-    #     write_model_out=False
-    # )
-    #
-    # run_descr = f"rfr_final_run_all_variables"
-    # # train_id_df = pd.read_csv(rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled_matched_sample.csv')
-    # # train_ids = train_id_df["field_id"].tolist()
-    # random_forest_wrapper_clean(
-    #     iacs_pth=rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled.csv',
-    #     dep_var="farm_size_r",
-    #     indep_vars=["log_field_size", "log_surrf_mean", "log_surrf_std", "log_surrf_min", "log_surrf_max", 'propAg1000',
-    #                 'SQRAvrg', 'avgTRI1000', 'avgTRI0', 'ElevationA', 'inter_sfm_prag', "inter_cr_st"],
-    #     categorical_vars=["inter_cr_st"],
-    #     n_estimators=1000,
-    #     train_ids=train_ids,
-    #     test_ids=test_ids,
-    #     max_features=6,
-    #     criterion="squared_error",
-    #     max_depth=8,
-    #     run_descr=run_descr,
-    #     out_folder=rf"models\{run_descr}",
-    #     make_predictions=True,
-    #     write_model_out=True
-    # )
+    run_descr = f"rfr_final_run_selected_variables"
+    # train_id_df = pd.read_csv(rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled_matched_sample.csv')
+    # train_ids = train_id_df["field_id"].tolist()
+    field_ids = pd.read_csv(rf"data\tables\predictors\all_field_ids_w_sample.csv")
+    train_ids = field_ids.loc[field_ids["matched_sample"] == 1, "field_id"].tolist()
+    test_ids = field_ids.loc[field_ids["matched_sample"] == 0, "field_id"].tolist()
+    random_forest_wrapper_clean(
+        iacs_pth=rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled.csv',
+        dep_var="farm_size_r",
+        indep_vars=["log_field_size", "log_surrf_mean", 'propAg1000', 'SQRAvrg', 'inter_sfm_prag', "inter_cr_st"],
+        categorical_vars=["inter_cr_st"],
+        n_estimators=1000,
+        train_ids=train_ids,
+        test_ids=test_ids,
+        max_features=6,
+        criterion="squared_error",
+        max_depth=8,
+        run_descr=run_descr,
+        out_folder=rf"models\{run_descr}",
+        make_predictions=True,
+        write_model_out=False
+    )
+
+    run_descr = f"rfr_final_run_all_variables"
+    # train_id_df = pd.read_csv(rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled_matched_sample.csv')
+    # train_ids = train_id_df["field_id"].tolist()
+    random_forest_wrapper_clean(
+        iacs_pth=rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled.csv',
+        dep_var="farm_size_r",
+        indep_vars=["log_field_size", "log_surrf_mean", "log_surrf_std", "log_surrf_min", "log_surrf_max", 'propAg1000',
+                    'SQRAvrg', 'avgTRI1000', 'avgTRI0', 'ElevationA', 'inter_sfm_prag', "inter_cr_st"],
+        categorical_vars=["inter_cr_st"],
+        n_estimators=1000,
+        train_ids=train_ids,
+        test_ids=test_ids,
+        max_features=6,
+        criterion="squared_error",
+        max_depth=8,
+        run_descr=run_descr,
+        out_folder=rf"models\{run_descr}",
+        make_predictions=True,
+        write_model_out=True
+    )
 
     # run_descr = f"rfr_test_run_all_variables"
     # random_forest_wrapper_clean(
@@ -719,7 +719,7 @@ def main():
     #     make_predictions=True,
     #     write_model_out=True
     # )
-
+    #
     # run_descr = f"rfr_test_run_selected_variables"
     # random_forest_wrapper_clean(
     #     iacs_pth=rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled.csv',
@@ -738,7 +738,7 @@ def main():
     # )
 
     # ##### PLOT PARTIAL DEPENDENCE PLOTS
-    # ## Define Inuput
+    # ## Define Input
     # # run_descr = f"rfr_test_run_all_variables"
     # run_descr = f"rfr_test_run_selected_variables"
     # # train_id_df = pd.read_csv(rf'data\tables\predictors\all_predictors_w_grassland_log_and_scaled_matched_sample.csv')

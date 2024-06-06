@@ -178,10 +178,13 @@ def plot_field_farm_sizes_numbers_in_hexagon_grid():
             highlight_extremes=False
         )
 
-def create_summary_statistics():
-    shp = gpd.read_file(r"Q:\FORLand\Field_farm_size_relationship\data\vector\IACS\IACS_ALL_2018_with_grassland_recl_3035.shp")
+def create_summary_statistics(shp):
+
 
     shp["field_area"] = shp["geometry"].area
+
+    shp_bb = shp.loc[(shp["farm_id"].str.slice(0, 2) == "12") & (shp["field_id"].str.slice(0, 2) == "BB")].copy()
+
 
     ## Data prep
     shp["federal_state"] = shp["field_id"].apply(lambda x: x[:2])
@@ -206,13 +209,24 @@ def create_summary_statistics():
             "MI": "Other",  # mix --> others
         })
 
+    ## Derive general statistics about each farm
+    farm_stats = shp.groupby("farm_id").agg(
+        farm_size=pd.NamedAgg("farm_size", "first"),
+        n_farm_sizes=pd.NamedAgg("farm_size", "nunique"),  # to control for consistency
+        mean_field_size=pd.NamedAgg("field_size", "mean"),
+        max_field_size=pd.NamedAgg("field_size", "max"),
+        min_field_size=pd.NamedAgg("field_size", "min"),
+        num_fields=pd.NamedAgg("field_id", "nunique")
+    )
+
     ## Examples of farm_identifiers
     t = shp.drop_duplicates(subset="federal_state")
 
     ## Mean field sizes
     avg_field_sizes_ddr = shp.groupby(by="FormerDDR").agg(
         num_fields=pd.NamedAgg("field_id", "nunique"),
-        mean_field_size=pd.NamedAgg("field_size", "mean")
+        mean_field_size=pd.NamedAgg("field_size", "mean"),
+        total_area=pd.NamedAgg("field_size", "sum")
     ).reset_index()
 
     avg_field_sizes_states = shp.groupby(by=["federal_state"]).agg(
@@ -227,7 +241,7 @@ def create_summary_statistics():
         total_area=pd.NamedAgg("field_size", "sum")
     ).reset_index()
 
-    avg_field_sizes_cover_type= shp.groupby(by=["cover_type"]).agg(
+    avg_field_sizes_cover_type = shp.groupby(by=["cover_type"]).agg(
         num_fields=pd.NamedAgg("field_id", "nunique"),
         mean_field_size=pd.NamedAgg("field_size", "mean"),
         total_area=pd.NamedAgg("field_size", "sum")
@@ -236,6 +250,9 @@ def create_summary_statistics():
     ## Mean farm size
     farms = shp.drop_duplicates(subset="farm_id").copy()
     farms.drop(columns=["field_size", "field_id"], inplace=True)
+
+    farms_bb = farms.loc[(farms["farm_id"].str.slice(0, 2) == "12") & (farms["state"].isin(["BB", "TH", "SA"]))].copy()
+    avg_farm_size_bb = farms_bb["farm_size"].mean()
 
     avg_farm_sizes_ddr = farms.groupby(by="FormerDDR").agg(
         num_farms=pd.NamedAgg("farm_id", "nunique"),
@@ -250,14 +267,37 @@ def create_summary_statistics():
     summary_v1 = pd.merge(avg_farm_sizes_states, avg_field_sizes_states, on="federal_state", how="left")
     summary_v1.columns = ["State", "N farms", "Average farm size", "N fields", "Average field size", "Total area"]
     summary_v1 = summary_v1[["State", "N farms", "N fields", "Average farm size", "Average field size", "Total area"]]
-    summary_v1["Average farm size"] = round(summary_v1["Average farm size"], 0)
+    summary_v1["Average farm size"] = round(summary_v1["Average farm size"], 1)
     summary_v1["Average field size"] = round(summary_v1["Average field size"], 1)
+
+    summary_v2 = pd.merge(avg_farm_sizes_ddr, avg_field_sizes_ddr, on="FormerDDR", how="left")
+    summary_v2.columns = ["Region", "N farms", "Average farm size", "N fields", "Average field size", "Total area"]
+    summary_v2 = summary_v2[["Region", "N farms", "N fields", "Average farm size", "Average field size", "Total area"]]
+    summary_v2["Average farm size"] = round(summary_v1["Average farm size"], 1)
+    summary_v2["Average field size"] = round(summary_v1["Average field size"], 1)
 
     avg_field_sizes_states_detailed.columns = ["State", "Cover type", "N fields", "Average field size", "Total area"]
     avg_field_sizes_states_detailed["Average field size"] = round(avg_field_sizes_states_detailed["Average field size"], 0)
 
-    summary_v1.to_csv(r"Q:\FORLand\Field_farm_size_relationship\data\tables\summary_stats_fields_farms\summary_stats_fields_farms.csv", index=False)
-    avg_field_sizes_states_detailed.to_csv(r"Q:\FORLand\Field_farm_size_relationship\data\tables\summary_stats_fields_farms\avg_field_sizes_states_detailed.csv", index=False)
+    crop_type_groups = shp.groupby(["new_ID_KTYP"])[["field_size"]].mean().reset_index()
+    crop_type_groups.rename(columns={"field_size": "Germany"}, inplace=True)
+    crop_type_groups_east_west = shp.groupby(["new_ID_KTYP", "FormerDDR"])[["field_size"]].mean().reset_index()
+    crop_type_groups_east_west = crop_type_groups_east_west.pivot(index='new_ID_KTYP', columns='FormerDDR', values='field_size').reset_index()
+    crop_type_groups_east_west.rename(columns={0: "West Germany", 1: "East Germany"}, inplace=True)
+    crop_type_groups = pd.merge(crop_type_groups, crop_type_groups_east_west, "left", "new_ID_KTYP")
+
+    summary_v1.to_csv(
+        r"Q:\FORLand\Field_farm_size_relationship\data\tables\summary_stats_fields_farms\summary_stats_fields_farms.csv",
+        index=False)
+    summary_v2.to_csv(
+        r"Q:\FORLand\Field_farm_size_relationship\data\tables\summary_stats_fields_farms\summary_stats_fields_farms_east_vs_west.csv",
+        index=False)
+    avg_field_sizes_states_detailed.to_csv(
+        r"Q:\FORLand\Field_farm_size_relationship\data\tables\summary_stats_fields_farms\avg_field_sizes_states_detailed.csv",
+        index=False)
+    crop_type_groups.to_csv(
+        r"Q:\FORLand\Field_farm_size_relationship\data\tables\summary_stats_fields_farms\crop_type_group_sizes.csv",
+        index=False)
 
 
     farms["fstate_id"] = farms["farm_id"].apply(lambda x: x[:2])
@@ -340,6 +380,7 @@ def create_summary_statistics():
         file.write(f"farms_operating_in_more_states, {farms_operating_in_more_states}\n")
         file.write(f"mean_share_outside_main_state, {mean_share_outside_main_state}\n")
         file.write(f"std_share_outside_main_stata, {std_share_outside_main_stata}\n")
+        file.write(f"farms_with_one_field, {len(farm_stats.loc[farm_stats['num_fields'] == 1])}")
 
 def explore_farm_distribution_across_states(iacs, shp_out_pth, csv_out_pth, plt_out_pth):
 
@@ -653,9 +694,9 @@ def main():
     pth = fr"data\vector\IACS\IACS_ALL_2018_cleaned.gpkg"
     iacs = gpd.read_file(pth)
 
-    # create_summary_statistics()
+    create_summary_statistics(shp=iacs)
 
-    # plot_field_farm_sizes_numbers_in_hexagon_grid()
+    plot_field_farm_sizes_numbers_in_hexagon_grid()
 
     # iacs = gpd.read_file(fr"data\vector\IACS\IACS_ALL_2018_with_grassland_recl.shp")
     # explore_grasslands(
@@ -674,15 +715,15 @@ def main():
     #     plt_out_pth=r"figures\share_of_farm_outside_main_state_png"
     # )
 
-    explore_field_sizes(
-        iacs=iacs,
-        farm_id_col="farm_id",
-        field_id_col="field_id",
-        field_size_col="field_size",
-        farm_size_col="farm_size",
-        crop_class_col="ID_KTYP",
-        out_folder=r"figures\advanced_exploration_field_to_farm_size",
-    )
+    # explore_field_sizes(
+    #     iacs=iacs,
+    #     farm_id_col="farm_id",
+    #     field_id_col="field_id",
+    #     field_size_col="field_size",
+    #     farm_size_col="farm_size",
+    #     crop_class_col="ID_KTYP",
+    #     out_folder=r"figures\advanced_exploration_field_to_farm_size",
+    # )
 
     # Get some basic statistics
     # iacs["fstate"] = iacs["field_id"].apply(lambda x: x.split('_')[0])

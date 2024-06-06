@@ -741,33 +741,33 @@ def main():
     print("start: " + s_time)
     os.chdir(WD)
 
-    # calculate_statistics_of_surrounding_fields(
-    #     iacs_pth=r"vector\IACS\IACS_ALL_2018_cleaned.gpkg",
-    #     out_pth=r"tables\predictors\surrounding_fields_stats_ALL_1000m.csv",
-    #     buffer_radius=1000)
+    calculate_statistics_of_surrounding_fields(
+        iacs_pth=r"vector\IACS\IACS_ALL_2018_cleaned.gpkg",
+        out_pth=r"tables\predictors\surrounding_fields_stats_ALL_1000m.csv",
+        buffer_radius=1000)
 
-    # get_size_and_administrative_variables(
-    #     iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
-    #     size_vars_out_pth="tables/predictors/size_vars_w_grassland.csv")
+    get_size_and_administrative_variables(
+        iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
+        size_vars_out_pth="tables/predictors/size_vars_w_grassland.csv")
 
-    # calculate_proportion_agricultural_area(
-    #     iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
-    #     sum_agr_out_pth="tables/predictors/SumAgr_w_grassland_ALL.csv")
+    calculate_proportion_agricultural_area(
+        iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
+        sum_agr_out_pth="tables/predictors/SumAgr_w_grassland_ALL.csv")
 
-    # calculate_elevation_per_field(
-    #     iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
-    #     dem_pth="raster/Dem_3035.tif",
-    #     elevation_out_pth=r"tables/predictors/elevationAvrg_w_grassland.csv")
-    #
-    # calculate_terrain_ruggedness_index_per_field(
-    #     iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
-    #     tri_pth="raster/DEM_TRI_GER_25m.tif",
-    #     tri_out_pth=r"tables/predictors/TRI_w_grassland.csv")
-    #
-    # calculate_soil_quality_per_field(
-    #     iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
-    #     sqr_pth="raster/sqr1000_250_v10_3035.tif",
-    #     sqr_out_pth=r"tables/predictors/SQRAvrg_w_grassland.csv")
+    calculate_elevation_per_field(
+        iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
+        dem_pth="raster/Dem_3035.tif",
+        elevation_out_pth=r"tables/predictors/elevationAvrg_w_grassland.csv")
+
+    calculate_terrain_ruggedness_index_per_field(
+        iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
+        tri_pth="raster/DEM_TRI_GER_25m.tif",
+        tri_out_pth=r"tables/predictors/TRI_w_grassland.csv")
+
+    calculate_soil_quality_per_field(
+        iacs_pth=r"vector/IACS/IACS_ALL_2018_cleaned.gpkg",
+        sqr_pth="raster/sqr1000_250_v10_3035.tif",
+        sqr_out_pth=r"tables/predictors/SQRAvrg_w_grassland.csv")
 
     concatenate_predictors(
         size_vars_pth="tables/predictors/size_vars_w_grassland.csv",
